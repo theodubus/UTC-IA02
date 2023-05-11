@@ -1,0 +1,22 @@
+c Le problème de la licorne
+c
+c Si la licorne est mythique, alors elle est immortelle ; si elle nʼest
+c pas mythique, cʼest un mammifère mortel. Si la licorne est un mammifère
+c ou si elle est immortelle, voire les deux, alors elle a une corne. La licorne est
+c magique si elle a une corne.
+c
+c my -> -mor === -my | -mor === -my -mor === -1 -2 0
+c -my -> mam & mor === my | (mam & mor) === (my | mam) & (my | mor) === my mam / my mor === 1 3 0 / 1 2 0 
+c mam | -mor -> cor === (-mam & mor) | cor === (cor | -mam) & (cor | mor) === cor -mam / cor mor === 4 -3 0 / 4 2 0
+c cor -> mag === -cor | mag === -cor mag === -4 5 0
+c
+c Question 1 : fichier tel quel
+c Question 2 : Rajouter -4 0 ou 4 0 selon question que l'on veut vérifier. On constate que la licorne a forcément une corne
+c Question 3 : Rajouter -1 0 puis 1 0 (pas en même temps). On se rend compte qu'on ne peut pas prouver ni mythique ni non mythique
+p cnf 5 6
+-1 -2 0
+1 3 0
+1 2 0
+4 -3 0
+4 2 0
+-4 5 0

@@ -1,0 +1,25 @@
+1. 9*9*9 = 729 variables nécéssaires
+
+2.
+at_least_one -> au moins une variable doit être vraie : X1 V X2 V X3
+at_most_one -> au plus une variable doit être vraie : -X1 V -X2, -X1 V -X3, -X2 V -X3
+unique -> at_least_one + at_most_one
+
+3. unique(1, 2, ..., 9)
+
+Regles sudoku :
+- chaque case contient exactement un chiffre entre 1 et 9
+- exactement une fois chaque chiffre de 1 à 9 dans chaque ligne
+- exactement une fois chaque chiffre de 1 à 9 dans chaque colonne
+- exactement une fois chaque chiffre de 1 à 9 dans chaque carré 3x3
+
+On ne peut pas modéliser unique avec XOR car plus de 2 variables.
+
+4. 729 variables, ex : case1 = 1 -> variable 1, case1 = 2 -> variable 2, etc
+(0, 0, 1) -> 1
+(0, 0, 0) -> 2
+...
+(0, 1, 1) -> 10
+
+On modélise les valeurs de 1 à 9 mais le sujet modélise lui les valeurs de 0 à 8
+
