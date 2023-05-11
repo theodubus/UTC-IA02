@@ -1,9 +1,10 @@
 # UTC-IA02-TP
 Ce dépôt contient les codes des TPs de l'UV IA02 de l'Université de Technologie de Compiègne.
 
-## 👨‍💻 - Langage utilisé
+## 👨‍💻 - Langages utilisés
 
 - Python
+- [Prolog](https://fr.wikipedia.org/wiki/Prolog)
 
 ## 📝 - Licence
 
