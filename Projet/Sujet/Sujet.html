@@ -1,0 +1,1488 @@
+<!DOCTYPE html>
+<html data-lt-installed="true" class=" fuccqklxe idc0_346" lang="en-US"><script type="text/javascript" async="" src="Sujet_files/recaptcha__en.js" crossorigin="anonymous" integrity="sha384-Pc4kSqgt9HkBUSG4m5s1icZtXtGOiIpAoIevDwoWsE6LISnB5sKY6eY1g4lVKA/D" nonce=""></script><script async="" src="Sujet_files/gtm.js"></script><script type="text/javascript">try {
+(function injectPageScriptAPI(scriptName, shouldOverrideWebSocket, shouldOverrideWebRTC, isInjected) { 
+
+    'use strict';
+
+    /**
+     * If script have been injected into a frame via contentWindow then we can simply take the copy of messageChannel left for us by parent document
+     * Otherwise creates new message channel that sends a message to the content-script to check if request should be allowed or not.
+     */
+    var messageChannel = isInjected ? window[scriptName] : (function () {
+
+        // Save original postMessage and addEventListener functions to prevent webpage from tampering both.
+        var postMessage = window.postMessage;
+        var addEventListener = window.addEventListener;
+
+        // Current request ID (incremented every time we send a new message)
+        var currentRequestId = 0;
+        var requestsMap = {};
+
+        /**
+         * Handles messages sent from the content script back to the page script.
+         *
+         * @param event Event with necessary data
+         */
+        var onMessageReceived = function (event) {
+
+            if (!event.data || !event.data.direction || event.data.direction !== "to-page-script@abu") {
+                return;
+            }
+
+            var requestData = requestsMap[event.data.requestId];
+            if (requestData) {
+                var wrapper = requestData.wrapper;
+                requestData.onResponseReceived(wrapper, event.data.block);
+                delete requestsMap[event.data.requestId];
+            }
+        };
+
+        /**
+         * @param url                The URL to which wrapped object is willing to connect
+         * @param requestType        Request type ( WEBSOCKET or WEBRTC)
+         * @param wrapper            WebSocket wrapper instance
+         * @param onResponseReceived Called when response is received
+         */
+        var sendMessage = function (url, requestType, wrapper, onResponseReceived) {
+
+            if (currentRequestId === 0) {
+                // Subscribe to response when this method is called for the first time
+                addEventListener.call(window, "message", onMessageReceived, false);
+            }
+
+            var requestId = ++currentRequestId;
+            requestsMap[requestId] = {
+                wrapper: wrapper,
+                onResponseReceived: onResponseReceived
+            };
+
+            var message = {
+                requestId: requestId,
+                direction: 'from-page-script@abu',
+                elementUrl: url,
+                documentUrl: document.URL,
+                requestType: requestType
+            };
+
+            // Send a message to the background page to check if the request should be blocked
+            postMessage.call(window, message, "*");
+        };
+
+        return {
+            sendMessage: sendMessage
+        };
+
+    })();
+
+    /*
+     * In some case Chrome won't run content scripts inside frames.
+     * So we have to intercept access to contentWindow/contentDocument and manually inject wrapper script into this context
+     *
+     * Based on: https://github.com/adblockplus/adblockpluschrome/commit/1aabfb3346dc0821c52dd9e97f7d61b8c99cd707
+     */
+    var injectedToString = Function.prototype.toString.bind(injectPageScriptAPI);
+
+    var injectedFramesAdd;
+    var injectedFramesHas;
+    if (window.WeakSet instanceof Function) {
+        var injectedFrames = new WeakSet();
+        injectedFramesAdd = WeakSet.prototype.add.bind(injectedFrames);
+        injectedFramesHas = WeakSet.prototype.has.bind(injectedFrames);
+    } else {
+        var frames = [];
+        injectedFramesAdd = function (el) {
+            if (frames.indexOf(el) < 0) {
+                frames.push(el);
+            }
+        };
+        injectedFramesHas = function (el) {
+            return frames.indexOf(el) >= 0;
+        };
+    }
+
+    /**
+     * Injects wrapper's script into passed window
+     * @param contentWindow Frame's content window
+     */
+    function injectPageScriptAPIInWindow(contentWindow) {
+        try {
+            if (contentWindow && !injectedFramesHas(contentWindow)) {
+                injectedFramesAdd(contentWindow);
+                contentWindow[scriptName] = messageChannel; // Left message channel for the injected script
+                var args = "'" + scriptName + "', " + shouldOverrideWebSocket + ", " + shouldOverrideWebRTC + ", true";
+                contentWindow.eval("(" + injectedToString() + ")(" + args + ");");
+                delete contentWindow[scriptName];
+            }
+        } catch (e) {
+        }
+    }
+
+    /**
+     * Overrides access to contentWindow/contentDocument for the passed HTML element's interface (iframe, frame, object)
+     * If the content of one of these objects is requested we will inject our wrapper script.
+     * @param iface HTML element's interface
+     */
+    function overrideContentAccess(iface) {
+
+        var contentWindowDescriptor = Object.getOwnPropertyDescriptor(iface.prototype, "contentWindow");
+        var contentDocumentDescriptor = Object.getOwnPropertyDescriptor(iface.prototype, "contentDocument");
+
+        // Apparently in HTMLObjectElement.prototype.contentWindow does not exist
+        // in older versions of Chrome such as 42.
+        if (!contentWindowDescriptor) {
+            return;
+        }
+
+        var getContentWindow = Function.prototype.call.bind(contentWindowDescriptor.get);
+        var getContentDocument = Function.prototype.call.bind(contentDocumentDescriptor.get);
+
+        contentWindowDescriptor.get = function () {
+            var contentWindow = getContentWindow(this);
+            injectPageScriptAPIInWindow(contentWindow);
+            return contentWindow;
+        };
+        contentDocumentDescriptor.get = function () {
+            injectPageScriptAPIInWindow(getContentWindow(this));
+            return getContentDocument(this);
+        };
+
+        Object.defineProperty(iface.prototype, "contentWindow", contentWindowDescriptor);
+        Object.defineProperty(iface.prototype, "contentDocument", contentDocumentDescriptor);
+    }
+
+    var interfaces = [HTMLFrameElement, HTMLIFrameElement, HTMLObjectElement];
+    for (var i = 0; i < interfaces.length; i++) {
+        overrideContentAccess(interfaces[i]);
+    }
+
+    /**
+     * Defines properties in destination object
+     * @param src Source object
+     * @param dest Destination object
+     * @param properties Properties to copy
+     */
+    var copyProperties = function (src, dest, properties) {
+        for (var i = 0; i < properties.length; i++) {
+            var prop = properties[i];
+            var descriptor = Object.getOwnPropertyDescriptor(src, prop);
+            // Passed property may be undefined
+            if (descriptor) {
+                Object.defineProperty(dest, prop, descriptor);
+            }
+        }
+    };
+
+    /**
+     * Check request by sending message to content script
+     * @param url URL to block
+     * @param type Request type
+     * @param callback Result callback
+     */
+    var checkRequest = function (url, type, callback) {
+        messageChannel.sendMessage(url, type, this, function (wrapper, blockConnection) {
+            callback(blockConnection);
+        });
+    };
+
+    /**
+     * The function overrides window.WebSocket with our wrapper, that will check url with filters through messaging with content-script.
+     *
+     * IMPORTANT NOTE:
+     * This function is first loaded as a content script. The only purpose of it is to call
+     * the "toString" method and use resulting string as a text content for injected script.
+     */
+    var overrideWebSocket = function () { 
+
+        if (!(window.WebSocket instanceof Function)) {
+            return;
+        }
+
+        /**
+         * WebSocket wrapper implementation.
+         * https://github.com/AdguardTeam/AdguardBrowserExtension/issues/349
+         *
+         * Based on:
+         * https://github.com/adblockplus/adblockpluschrome/commit/457a336ee55a433217c3ffe5d363e5c6980f26f4
+         */
+
+        /**
+         * As far as possible we must track everything we use that could be sabotaged by the website later in order to circumvent us.
+         */
+        var RealWebSocket = WebSocket;
+        var closeWebSocket = Function.prototype.call.bind(RealWebSocket.prototype.close);
+
+        function WrappedWebSocket(url, protocols) {
+            // Throw correct exceptions if the constructor is used improperly.
+            if (!(this instanceof WrappedWebSocket)) {
+                return RealWebSocket();
+            }
+            if (arguments.length < 1) {
+                return new RealWebSocket();
+            }
+
+            var websocket = new RealWebSocket(url, protocols);
+
+            // This is the key point: checking if this WS should be blocked or not
+            // Don't forget that the type of 'websocket.url' is String, but 'url 'parameter might have another type.
+            checkRequest(websocket.url, 'WEBSOCKET', function (blocked) {
+                if (blocked) {
+                    closeWebSocket(websocket);
+                }
+            });
+
+            return websocket;
+        }
+
+        // https://github.com/AdguardTeam/AdguardBrowserExtension/issues/488
+        WrappedWebSocket.prototype = RealWebSocket.prototype;
+        window.WebSocket = WrappedWebSocket.bind();
+
+        copyProperties(RealWebSocket, WebSocket, ["CONNECTING", "OPEN", "CLOSING", "CLOSED", "name", "prototype"]);
+
+        RealWebSocket.prototype.constructor = WebSocket;
+
+    };
+
+    /**
+     * The function overrides window.RTCPeerConnection with our wrapper, that will check ice servers URLs with filters through messaging with content-script.
+     *
+     * IMPORTANT NOTE:
+     * This function is first loaded as a content script. The only purpose of it is to call
+     * the "toString" method and use resulting string as a text content for injected script.
+     */
+    var overrideWebRTC = function () { 
+
+
+        if (!(window.RTCPeerConnection instanceof Function) &&
+            !(window.webkitRTCPeerConnection instanceof Function)) {
+            return;
+        }
+
+        /**
+         * RTCPeerConnection wrapper implementation.
+         * https://github.com/AdguardTeam/AdguardBrowserExtension/issues/588
+         *
+         * Based on:
+         * https://github.com/adblockplus/adblockpluschrome/commit/af0585137be19011eace1cf68bf61eed2e6db974
+         *
+         * Chromium webRequest API doesn't allow the blocking of WebRTC connections
+         * https://bugs.chromium.org/p/chromium/issues/detail?id=707683
+         */
+
+        var RealRTCPeerConnection = window.RTCPeerConnection || window.webkitRTCPeerConnection;
+        var closeRTCPeerConnection = Function.prototype.call.bind(RealRTCPeerConnection.prototype.close);
+
+        var RealArray = Array;
+        var RealString = String;
+        var createObject = Object.create;
+        var defineProperty = Object.defineProperty;
+
+        /**
+         * Convert passed url to string
+         * @param url URL
+         * @returns {string}
+         */
+        function urlToString(url) {
+            if (typeof url !== "undefined") {
+                return RealString(url);
+            }
+        }
+
+        /**
+         * Creates new immutable array from original with some transform function
+         * @param original
+         * @param transform
+         * @returns {*}
+         */
+        function safeCopyArray(original, transform) {
+
+            if (original === null || typeof original !== "object") {
+                return original;
+            }
+
+            var immutable = RealArray(original.length);
+            for (var i = 0; i < immutable.length; i++) {
+                defineProperty(immutable, i, {
+                    configurable: false, enumerable: false, writable: false,
+                    value: transform(original[i])
+                });
+            }
+            defineProperty(immutable, "length", {
+                configurable: false, enumerable: false, writable: false,
+                value: immutable.length
+            });
+            return immutable;
+        }
+
+        /**
+         * Protect configuration from mutations
+         * @param configuration RTCPeerConnection configuration object
+         * @returns {*}
+         */
+        function protectConfiguration(configuration) {
+
+            if (configuration === null || typeof configuration !== "object") {
+                return configuration;
+            }
+
+            var iceServers = safeCopyArray(
+                configuration.iceServers,
+                function (iceServer) {
+
+                    var url = iceServer.url;
+                    var urls = iceServer.urls;
+
+                    // RTCPeerConnection doesn't iterate through pseudo Arrays of urls.
+                    if (typeof urls !== "undefined" && !(urls instanceof RealArray)) {
+                        urls = [urls];
+                    }
+
+                    return createObject(iceServer, {
+                        url: {
+                            configurable: false, enumerable: false, writable: false,
+                            value: urlToString(url)
+                        },
+                        urls: {
+                            configurable: false, enumerable: false, writable: false,
+                            value: safeCopyArray(urls, urlToString)
+                        }
+                    });
+                }
+            );
+
+            return createObject(configuration, {
+                iceServers: {
+                    configurable: false, enumerable: false, writable: false,
+                    value: iceServers
+                }
+            });
+        }
+
+        /**
+         * Check WebRTC connection's URL and close if it's blocked by rule
+         * @param connection Connection
+         * @param url URL to check
+         */
+        function checkWebRTCRequest(connection, url) {
+            checkRequest(url, 'WEBRTC', function (blocked) {
+                if (blocked) {
+                    try {
+                        closeRTCPeerConnection(connection);
+                    } catch (e) {
+                        // Ignore exceptions
+                    }
+                }
+            });
+        }
+
+        /**
+         * Check each URL of ice server in configuration for blocking.
+         *
+         * @param connection RTCPeerConnection
+         * @param configuration Configuration for RTCPeerConnection
+         * https://developer.mozilla.org/en-US/docs/Web/API/RTCConfiguration
+         */
+        function checkConfiguration(connection, configuration) {
+
+            if (!configuration || !configuration.iceServers) {
+                return;
+            }
+
+            var iceServers = configuration.iceServers;
+            for (var i = 0; i < iceServers.length; i++) {
+
+                var iceServer = iceServers[i];
+                if (!iceServer) {
+                    continue;
+                }
+
+                if (iceServer.url) {
+                    checkWebRTCRequest(connection, iceServer.url);
+                }
+
+                if (iceServer.urls) {
+                    for (var j = 0; j < iceServer.urls.length; j++) {
+                        checkWebRTCRequest(connection, iceServer.urls[j]);
+                    }
+                }
+            }
+        }
+
+        /**
+         * Overrides setConfiguration method
+         * https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection/setConfiguration
+         */
+        if (RealRTCPeerConnection.prototype.setConfiguration) {
+
+            var realSetConfiguration = Function.prototype.call.bind(RealRTCPeerConnection.prototype.setConfiguration);
+
+            RealRTCPeerConnection.prototype.setConfiguration = function (configuration) {
+                configuration = protectConfiguration(configuration);
+                // Call the real method first, so that validates the configuration
+                realSetConfiguration(this, configuration);
+                checkConfiguration(this, configuration);
+            };
+        }
+
+        function WrappedRTCPeerConnection(configuration, arg) {
+
+            if (!(this instanceof WrappedRTCPeerConnection)) {
+                return RealRTCPeerConnection();
+            }
+
+            configuration = protectConfiguration(configuration);
+
+            /**
+             * The old webkitRTCPeerConnection constructor takes an optional second argument and we must pass it.
+             */
+            var connection = new RealRTCPeerConnection(configuration, arg);
+            checkConfiguration(connection, configuration);
+            return connection;
+        }
+
+        WrappedRTCPeerConnection.prototype = RealRTCPeerConnection.prototype;
+
+        var boundWrappedRTCPeerConnection = WrappedRTCPeerConnection.bind();
+        copyProperties(RealRTCPeerConnection, boundWrappedRTCPeerConnection, ["caller", "generateCertificate", "name", "prototype"]);
+        RealRTCPeerConnection.prototype.constructor = boundWrappedRTCPeerConnection;
+
+        if ("RTCPeerConnection" in window) {
+            window.RTCPeerConnection = boundWrappedRTCPeerConnection;
+        }
+        if ("webkitRTCPeerConnection" in window) {
+            window.webkitRTCPeerConnection = boundWrappedRTCPeerConnection;
+        }
+    };
+
+    if (shouldOverrideWebSocket) {
+        overrideWebSocket();
+    }
+
+    if (shouldOverrideWebRTC) {
+        overrideWebRTC();
+    }
+})('wrapper-script-14038595057022818', false, true);
+} catch (ex) { console.error('Error executing AG js: ' + ex); }
+(function () {
+            var current = document.currentScript;
+            var parent = current && current.parentNode;
+            if (parent) {
+                parent.removeChild(current);
+            }
+        })();</script><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="csrf-token" content="sjTrokNy-rX4w9Hp_Bwl_fNiFqTdHT7_Cm4g">
+    
+    
+    <meta name="description" content="02/05/2023 : 0.1.0 version initiale">
+    
+    <title>Projet IA02 Hitman - HackMD</title>
+    <link rel="icon" type="image/png" href="https://hackmd.io/favicon.png">
+	<link rel="apple-touch-icon" href="https://hackmd.io/apple-touch-icon.png">
+    
+<script nonce="">
+  window.domain = 'hackmd.io'
+  window.urlpath = ''
+  window.debug = false
+  window.version = '1.3.0'
+  window.brand = 'HackMD'
+
+  
+  window.NOTE_ID = 'eD1xS86-TVOPpPizqPNktQ'
+  
+
+  window.GOOGLE_API_KEY = 'AIzaSyCjSrqWHhmWJnoI7JlD88XDSaBgiKbaenA'
+  window.GOOGLE_CLIENT_ID = '911617723593-drikdibvvn63slfd6kbqigo8ql1no55s.apps.googleusercontent.com'
+  window.DROPBOX_APP_KEY = 'rdoizrlnkuha23r'
+  
+  window.PLANTUML_SERVER = 'https://ptuml.hackmd.io'
+
+  window.ASSET_URL = 'https://assets.hackmd.io'
+
+  window.USER_CAN_CREATE_TEAM = true
+  window.USER_CAN_DELETE_ACCOUNT = true
+  window.USER_DELETE_ACCOUNT_VIA_EMAIL = true
+  window.PAYMENT_ENABLED = true
+  window.PAYMENT_PROMOTION_BANNER_ENABLED = false
+  window.GITHUB_SYNC_ENABLED = true
+  window.GITLAB_SYNC_ENABLED = false
+  window.GITLAB_SYNC_BASE_URL = ''
+  window.VCS_SYNC_MODE = 'github'
+  window.VCS_PROVIDER_NAME = 'GitHub'
+  window.FREE_TEAM_NUM = 20
+  window.FREE_TEAM_MEMBER_NUM = 3
+  window.FREE_PUBLIC_TEAM_NUM = 10
+  
+  window.EE_SITE_ENABLE = false
+  window.EE_SITE_NAME = 'false'
+  window.EE_SITE_LINK = 'false'
+  window.EESITE_INFO = false
+  window.ENTERPRISE_DISCOVERY_ENABLE = false
+  window.ENTERPRISE_DISCOVERY_TEAM = true
+  window.ENTERPRISE_DISCOVERY_NOTE = true
+  window.ENTERPRISE_DISCOVERY_VIEW_PERMISSION = 'guest'
+  
+  window.ALLOW_ANONYMOUS = true
+  window.ALLOW_ANONYMOUS_EDIT = false
+  window.PUBLIC_OVERVIEW = false
+  window.INTERNAL_PUBLIC_OVERVIEW = false
+  window.FULL_TEXT_SEARCH_ENABLE = false
+  window.ALGOLIA_SEARCH_ENABLE = true
+  window.MARKETING_EMAIL_ENABLE = true
+  
+  
+  window.RECAPTCHA_SCORE_KEY = '6LdtkK4ZAAAAAG1B4iENhmQTce1xNTyHu0GjgnXi'
+  
+  
+  window.API_MANAGEMENT_UI_ENABLE = true
+  window.FEEDBACK_UI_ENABLE = true
+  window.PUBLISH_ENABLE = true
+
+  
+
+  
+  window.SHOW_HOT_NOTES = false
+  
+
+  
+  window.HOT_NOTES_TIME_TYPE = 'week'
+  
+
+  
+  window.SHOW_OVERVIEW = false
+  
+
+  
+  window.MENTIONS = {}
+  
+
+  
+  window.MENTION_ANCHORS = []
+  
+
+  
+  window.COMMENT_ANCHORS = []
+  
+
+  
+  window.IS_OWNER = false
+  
+
+  
+  window.IS_TEAM_ADMIN = false
+  
+
+  
+  window.IS_INVITEE_ADMIN = false
+  
+
+  
+  window.USER_PROFILE = {"name":"Guest Kim"}
+  
+
+  
+  window.VERSION_TIME = '1687336869220'
+  
+
+  
+  window.canEdit = false
+  
+
+  
+  window.canWriteComment = false
+  
+
+  window.TRASH_NOTE_DELETE_AFTER_FREE = 3
+  window.TRASH_NOTE_DELETE_AFTER_PAID = 30
+
+  
+    window.ENABLED_PREVIEW_FEATURE = {}
+  
+
+  
+    window.IS_OWNER_UPGRADED = false
+  
+
+  
+    window.IMGUR_FALLBACK_CDN = 'https://imgur-backup.hackmd.io'
+  
+
+  
+    window.CLOUD_META_UI = true
+  
+  
+    window.CLOUD_META_API = true
+  
+  
+    window.CLOUD_META_MIGRATION = false
+  
+  
+    window.YAML_METADATA_ENABLED = false
+  
+
+  
+    window.NOTE_CAPACITY_LIMIT = 50
+  
+
+  
+    window.DOCUMENT_MAX_LENGTH = 100000
+  
+</script>
+
+
+    
+<!-- Google Tag Manager -->
+<script nonce="">(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-KLW9Z3');</script>
+<!-- End Google Tag Manager -->
+
+
+    
+
+
+
+    <meta property="fb:app_id" content="1436904003272070">
+
+
+
+    <meta name="twitter:image:src" content="data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+PHN2ZyB4bWxuczpyZGY9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkvMDIvMjItcmRmLXN5bnRheC1ucyMiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgaGVpZ2h0PSI5NiIgd2lkdGg9Ijk2IiB2ZXJzaW9uPSIxLjEiIHZpZXdCb3g9IjAgMCA5NiA5NiI+PGc+PHJlY3Qgd2lkdGg9Ijk2IiBoZWlnaHQ9Ijk2IiBmaWxsPSIjZDVkYjM0IiAvPjx0ZXh0IGZvbnQtc2l6ZT0iNjRweCIgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiNmZmZmZmYiPjx0c3BhbiB4PSI0OCIgeT0iNzIiIHN0cm9rZS13aWR0aD0iLjI2NDU4cHgiIGZpbGw9IiNmZmZmZmYiPkk8L3RzcGFuPjwvdGV4dD48L2c+PC9zdmc+">
+
+
+<meta name="twitter:site" content="@hackmdio">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Projet IA02 Hitman - HackMD">
+
+
+    <meta name="twitter:description" content="02/05/2023 : 0.1.0 version initiale">
+
+
+
+    <meta property="og:image" content="data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+PHN2ZyB4bWxuczpyZGY9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkvMDIvMjItcmRmLXN5bnRheC1ucyMiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgaGVpZ2h0PSI5NiIgd2lkdGg9Ijk2IiB2ZXJzaW9uPSIxLjEiIHZpZXdCb3g9IjAgMCA5NiA5NiI+PGc+PHJlY3Qgd2lkdGg9Ijk2IiBoZWlnaHQ9Ijk2IiBmaWxsPSIjZDVkYjM0IiAvPjx0ZXh0IGZvbnQtc2l6ZT0iNjRweCIgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiNmZmZmZmYiPjx0c3BhbiB4PSI0OCIgeT0iNzIiIHN0cm9rZS13aWR0aD0iLjI2NDU4cHgiIGZpbGw9IiNmZmZmZmYiPkk8L3RzcGFuPjwvdGV4dD48L2c+PC9zdmc+">
+
+
+<meta property="og:site_name" content="HackMD">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Projet IA02 Hitman - HackMD">
+
+
+    <meta property="og:description" content="02/05/2023 : 0.1.0 version initiale">
+
+
+    <link rel="stylesheet" href="Sujet_files/emojify.min.css">
+     <link href="Sujet_files/font-vendor.3d113077b3e51703e6ff.css" rel="stylesheet"><link href="Sujet_files/common-vendor.3f50d6443fc55574a09d.css" rel="stylesheet"><link href="Sujet_files/pretty-vendor.c152255c6001dfd89878.css" rel="stylesheet"><link href="Sujet_files/pretty.448a18f9137bcde1fa18.css" rel="stylesheet">
+    <!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
+<!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+<!--[if lt IE 9]>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv.min.js" integrity="sha256-3Jy/GbSLrg0o9y5Z5n1uw0qxZECH7C6OQpVBgNFYa0g=" crossorigin="anonymous"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/respond.js/1.4.2/respond.min.js" integrity="sha256-g6iAfvZp+nDQ2TdTR/VVKJf3bGro4ub5fvWSWVRi2NE=" crossorigin="anonymous"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/es5-shim/4.5.9/es5-shim.min.js" integrity="sha256-8E4Is26QH0bD52WoQpcB+R/tcWQtpzlCojrybUd7Mxo=" crossorigin="anonymous"></script>
+<![endif]-->
+
+    
+<style>
+  .grecaptcha-badge {
+      visibility: hidden;
+  }
+</style>
+<script nonce="" src="Sujet_files/enterprise.js"></script>
+
+
+<style></style><link rel="stylesheet" type="text/css" href="Sujet_files/fretboard.26d5e78e694dfbd67fb7.css"><script charset="utf-8" src="Sujet_files/MathJax.js"></script><link href="data:text/css,%5Bid*%3D'google_ads_iframe'%5D%2C%5Bid*%3D'taboola-'%5D%2C.taboolaHeight%2C.taboola-placeholder%2C%23credential_picker_container%2C%23credentials-picker-container%2C%23credential_picker_iframe%2C%5Bid*%3D'google-one-tap-iframe'%5D%2C%23google-one-tap-popup-container%2C.google-one-tap-modal-div%7Bdisplay%3Anone!important%3Bmin-height%3A0!important%3Bheight%3A0!important%3B%7D" rel="stylesheet" type="text/css"><style type="text/css">.MathJax_Preview {color: #888}
+#MathJax_Message {position: fixed; left: 1px; bottom: 2px; background-color: #E6E6E6; border: 1px solid #959595; margin: 0px; padding: 2px 8px; z-index: 102; color: black; font-size: 80%; width: auto; white-space: nowrap}
+#MathJax_MSIE_Frame {position: absolute; top: 0; left: 0; width: 0px; z-index: 101; border: 0px; margin: 0px; padding: 0px}
+.MathJax_Error {color: #CC0000; font-style: italic}
+</style><script charset="utf-8" src="Sujet_files/TeX-AMS_CHTML.js"></script><style type="text/css">.MathJax_Hover_Frame {border-radius: .25em; -webkit-border-radius: .25em; -moz-border-radius: .25em; -khtml-border-radius: .25em; box-shadow: 0px 0px 15px #83A; -webkit-box-shadow: 0px 0px 15px #83A; -moz-box-shadow: 0px 0px 15px #83A; -khtml-box-shadow: 0px 0px 15px #83A; border: 1px solid #A6D ! important; display: inline-block; position: absolute}
+.MathJax_Menu_Button .MathJax_Hover_Arrow {position: absolute; cursor: pointer; display: inline-block; border: 2px solid #AAA; border-radius: 4px; -webkit-border-radius: 4px; -moz-border-radius: 4px; -khtml-border-radius: 4px; font-family: 'Courier New',Courier; font-size: 9px; color: #F0F0F0}
+.MathJax_Menu_Button .MathJax_Hover_Arrow span {display: block; background-color: #AAA; border: 1px solid; border-radius: 3px; line-height: 0; padding: 4px}
+.MathJax_Hover_Arrow:hover {color: white!important; border: 2px solid #CCC!important}
+.MathJax_Hover_Arrow:hover span {background-color: #CCC!important}
+</style><style type="text/css">#MathJax_Zoom {position: absolute; background-color: #F0F0F0; overflow: auto; display: block; z-index: 301; padding: .5em; border: 1px solid black; margin: 0; font-weight: normal; font-style: normal; text-align: left; text-indent: 0; text-transform: none; line-height: normal; letter-spacing: normal; word-spacing: normal; word-wrap: normal; white-space: nowrap; float: none; -webkit-box-sizing: content-box; -moz-box-sizing: content-box; box-sizing: content-box; box-shadow: 5px 5px 15px #AAAAAA; -webkit-box-shadow: 5px 5px 15px #AAAAAA; -moz-box-shadow: 5px 5px 15px #AAAAAA; -khtml-box-shadow: 5px 5px 15px #AAAAAA; filter: progid:DXImageTransform.Microsoft.dropshadow(OffX=2, OffY=2, Color='gray', Positive='true')}
+#MathJax_ZoomOverlay {position: absolute; left: 0; top: 0; z-index: 300; display: inline-block; width: 100%; height: 100%; border: 0; padding: 0; margin: 0; background-color: white; opacity: 0; filter: alpha(opacity=0)}
+#MathJax_ZoomFrame {position: relative; display: inline-block; height: 0; width: 0}
+#MathJax_ZoomEventTrap {position: absolute; left: 0; top: 0; z-index: 302; display: inline-block; border: 0; padding: 0; margin: 0; background-color: white; opacity: 0; filter: alpha(opacity=0)}
+</style><style type="text/css">#MathJax_About {position: fixed; left: 50%; width: auto; text-align: center; border: 3px outset; padding: 1em 2em; background-color: #DDDDDD; color: black; cursor: default; font-family: message-box; font-size: 120%; font-style: normal; text-indent: 0; text-transform: none; line-height: normal; letter-spacing: normal; word-spacing: normal; word-wrap: normal; white-space: nowrap; float: none; z-index: 201; border-radius: 15px; -webkit-border-radius: 15px; -moz-border-radius: 15px; -khtml-border-radius: 15px; box-shadow: 0px 10px 20px #808080; -webkit-box-shadow: 0px 10px 20px #808080; -moz-box-shadow: 0px 10px 20px #808080; -khtml-box-shadow: 0px 10px 20px #808080; filter: progid:DXImageTransform.Microsoft.dropshadow(OffX=2, OffY=2, Color='gray', Positive='true')}
+#MathJax_About.MathJax_MousePost {outline: none}
+.MathJax_Menu {position: absolute; background-color: white; color: black; width: auto; padding: 5px 0px; border: 1px solid #CCCCCC; margin: 0; cursor: default; font: menu; text-align: left; text-indent: 0; text-transform: none; line-height: normal; letter-spacing: normal; word-spacing: normal; word-wrap: normal; white-space: nowrap; float: none; z-index: 201; border-radius: 5px; -webkit-border-radius: 5px; -moz-border-radius: 5px; -khtml-border-radius: 5px; box-shadow: 0px 10px 20px #808080; -webkit-box-shadow: 0px 10px 20px #808080; -moz-box-shadow: 0px 10px 20px #808080; -khtml-box-shadow: 0px 10px 20px #808080; filter: progid:DXImageTransform.Microsoft.dropshadow(OffX=2, OffY=2, Color='gray', Positive='true')}
+.MathJax_MenuItem {padding: 1px 2em; background: transparent}
+.MathJax_MenuArrow {position: absolute; right: .5em; padding-top: .25em; color: #666666; font-size: .75em}
+.MathJax_MenuActive .MathJax_MenuArrow {color: white}
+.MathJax_MenuArrow.RTL {left: .5em; right: auto}
+.MathJax_MenuCheck {position: absolute; left: .7em}
+.MathJax_MenuCheck.RTL {right: .7em; left: auto}
+.MathJax_MenuRadioCheck {position: absolute; left: .7em}
+.MathJax_MenuRadioCheck.RTL {right: .7em; left: auto}
+.MathJax_MenuLabel {padding: 1px 2em 3px 1.33em; font-style: italic}
+.MathJax_MenuRule {border-top: 1px solid #DDDDDD; margin: 4px 3px}
+.MathJax_MenuDisabled {color: GrayText}
+.MathJax_MenuActive {background-color: #606872; color: white}
+.MathJax_MenuDisabled:focus, .MathJax_MenuLabel:focus {background-color: #E8E8E8}
+.MathJax_ContextMenu:focus {outline: none}
+.MathJax_ContextMenu .MathJax_MenuItem:focus {outline: none}
+#MathJax_AboutClose {top: .2em; right: .2em}
+.MathJax_Menu .MathJax_MenuClose {top: -10px; left: -10px}
+.MathJax_MenuClose {position: absolute; cursor: pointer; display: inline-block; border: 2px solid #AAA; border-radius: 18px; -webkit-border-radius: 18px; -moz-border-radius: 18px; -khtml-border-radius: 18px; font-family: 'Courier New',Courier; font-size: 24px; color: #F0F0F0}
+.MathJax_MenuClose span {display: block; background-color: #AAA; border: 1.5px solid; border-radius: 18px; -webkit-border-radius: 18px; -moz-border-radius: 18px; -khtml-border-radius: 18px; line-height: 0; padding: 8px 0 6px}
+.MathJax_MenuClose:hover {color: white!important; border: 2px solid #CCC!important}
+.MathJax_MenuClose:hover span {background-color: #CCC!important}
+.MathJax_MenuClose:hover:focus {outline: none}
+</style><style type="text/css">.MathJax_Preview .MJXf-math {color: inherit!important}
+</style><style type="text/css">.MJX_Assistive_MathML {position: absolute!important; top: 0; left: 0; clip: rect(1px, 1px, 1px, 1px); padding: 1px 0 0 0!important; border: 0!important; height: 1px!important; width: 1px!important; overflow: hidden!important; display: block!important; -webkit-touch-callout: none; -webkit-user-select: none; -khtml-user-select: none; -moz-user-select: none; -ms-user-select: none; user-select: none}
+.MJX_Assistive_MathML.MJX_Assistive_MathML_Block {width: 100%!important}
+</style><script charset="utf-8" src="Sujet_files/Safe.js"></script><style type="text/css">.MJXp-script {font-size: .8em}
+.MJXp-right {-webkit-transform-origin: right; -moz-transform-origin: right; -ms-transform-origin: right; -o-transform-origin: right; transform-origin: right}
+.MJXp-bold {font-weight: bold}
+.MJXp-italic {font-style: italic}
+.MJXp-scr {font-family: MathJax_Script,'Times New Roman',Times,STIXGeneral,serif}
+.MJXp-frak {font-family: MathJax_Fraktur,'Times New Roman',Times,STIXGeneral,serif}
+.MJXp-sf {font-family: MathJax_SansSerif,'Times New Roman',Times,STIXGeneral,serif}
+.MJXp-cal {font-family: MathJax_Caligraphic,'Times New Roman',Times,STIXGeneral,serif}
+.MJXp-mono {font-family: MathJax_Typewriter,'Times New Roman',Times,STIXGeneral,serif}
+.MJXp-largeop {font-size: 150%}
+.MJXp-largeop.MJXp-int {vertical-align: -.2em}
+.MJXp-math {display: inline-block; line-height: 1.2; text-indent: 0; font-family: 'Times New Roman',Times,STIXGeneral,serif; white-space: nowrap; border-collapse: collapse}
+.MJXp-display {display: block; text-align: center; margin: 1em 0}
+.MJXp-math span {display: inline-block}
+.MJXp-box {display: block!important; text-align: center}
+.MJXp-box:after {content: " "}
+.MJXp-rule {display: block!important; margin-top: .1em}
+.MJXp-char {display: block!important}
+.MJXp-mo {margin: 0 .15em}
+.MJXp-mfrac {margin: 0 .125em; vertical-align: .25em}
+.MJXp-denom {display: inline-table!important; width: 100%}
+.MJXp-denom > * {display: table-row!important}
+.MJXp-surd {vertical-align: top}
+.MJXp-surd > * {display: block!important}
+.MJXp-script-box > *  {display: table!important; height: 50%}
+.MJXp-script-box > * > * {display: table-cell!important; vertical-align: top}
+.MJXp-script-box > *:last-child > * {vertical-align: bottom}
+.MJXp-script-box > * > * > * {display: block!important}
+.MJXp-mphantom {visibility: hidden}
+.MJXp-munderover, .MJXp-munder {display: inline-table!important}
+.MJXp-over {display: inline-block!important; text-align: center}
+.MJXp-over > * {display: block!important}
+.MJXp-munderover > *, .MJXp-munder > * {display: table-row!important}
+.MJXp-mtable {vertical-align: .25em; margin: 0 .125em}
+.MJXp-mtable > * {display: inline-table!important; vertical-align: middle}
+.MJXp-mtr {display: table-row!important}
+.MJXp-mtd {display: table-cell!important; text-align: center; padding: .5em 0 0 .5em}
+.MJXp-mtr > .MJXp-mtd:first-child {padding-left: 0}
+.MJXp-mtr:first-child > .MJXp-mtd {padding-top: 0}
+.MJXp-mlabeledtr {display: table-row!important}
+.MJXp-mlabeledtr > .MJXp-mtd:first-child {padding-left: 0}
+.MJXp-mlabeledtr:first-child > .MJXp-mtd {padding-top: 0}
+.MJXp-merror {background-color: #FFFF88; color: #CC0000; border: 1px solid #CC0000; padding: 1px 3px; font-style: normal; font-size: 90%}
+.MJXp-scale0 {-webkit-transform: scaleX(.0); -moz-transform: scaleX(.0); -ms-transform: scaleX(.0); -o-transform: scaleX(.0); transform: scaleX(.0)}
+.MJXp-scale1 {-webkit-transform: scaleX(.1); -moz-transform: scaleX(.1); -ms-transform: scaleX(.1); -o-transform: scaleX(.1); transform: scaleX(.1)}
+.MJXp-scale2 {-webkit-transform: scaleX(.2); -moz-transform: scaleX(.2); -ms-transform: scaleX(.2); -o-transform: scaleX(.2); transform: scaleX(.2)}
+.MJXp-scale3 {-webkit-transform: scaleX(.3); -moz-transform: scaleX(.3); -ms-transform: scaleX(.3); -o-transform: scaleX(.3); transform: scaleX(.3)}
+.MJXp-scale4 {-webkit-transform: scaleX(.4); -moz-transform: scaleX(.4); -ms-transform: scaleX(.4); -o-transform: scaleX(.4); transform: scaleX(.4)}
+.MJXp-scale5 {-webkit-transform: scaleX(.5); -moz-transform: scaleX(.5); -ms-transform: scaleX(.5); -o-transform: scaleX(.5); transform: scaleX(.5)}
+.MJXp-scale6 {-webkit-transform: scaleX(.6); -moz-transform: scaleX(.6); -ms-transform: scaleX(.6); -o-transform: scaleX(.6); transform: scaleX(.6)}
+.MJXp-scale7 {-webkit-transform: scaleX(.7); -moz-transform: scaleX(.7); -ms-transform: scaleX(.7); -o-transform: scaleX(.7); transform: scaleX(.7)}
+.MJXp-scale8 {-webkit-transform: scaleX(.8); -moz-transform: scaleX(.8); -ms-transform: scaleX(.8); -o-transform: scaleX(.8); transform: scaleX(.8)}
+.MJXp-scale9 {-webkit-transform: scaleX(.9); -moz-transform: scaleX(.9); -ms-transform: scaleX(.9); -o-transform: scaleX(.9); transform: scaleX(.9)}
+.MathJax_PHTML .noError {vertical-align: ; font-size: 90%; text-align: left; color: black; padding: 1px 3px; border: 1px solid}
+</style><style type="text/css">.mjx-chtml {display: inline-block; line-height: 0; text-indent: 0; text-align: left; text-transform: none; font-style: normal; font-weight: normal; font-size: 100%; font-size-adjust: none; letter-spacing: normal; word-wrap: normal; word-spacing: normal; white-space: nowrap; float: none; direction: ltr; max-width: none; max-height: none; min-width: 0; min-height: 0; border: 0; margin: 0; padding: 1px 0}
+.MJXc-display {display: block; text-align: center; margin: 1em 0; padding: 0}
+.mjx-chtml[tabindex]:focus, body :focus .mjx-chtml[tabindex] {display: inline-table}
+.mjx-full-width {text-align: center; display: table-cell!important; width: 10000em}
+.mjx-math {display: inline-block; border-collapse: separate; border-spacing: 0}
+.mjx-math * {display: inline-block; -webkit-box-sizing: content-box!important; -moz-box-sizing: content-box!important; box-sizing: content-box!important; text-align: left}
+.mjx-numerator {display: block; text-align: center}
+.mjx-denominator {display: block; text-align: center}
+.MJXc-stacked {height: 0; position: relative}
+.MJXc-stacked > * {position: absolute}
+.MJXc-bevelled > * {display: inline-block}
+.mjx-stack {display: inline-block}
+.mjx-op {display: block}
+.mjx-under {display: table-cell}
+.mjx-over {display: block}
+.mjx-over > * {padding-left: 0px!important; padding-right: 0px!important}
+.mjx-under > * {padding-left: 0px!important; padding-right: 0px!important}
+.mjx-stack > .mjx-sup {display: block}
+.mjx-stack > .mjx-sub {display: block}
+.mjx-prestack > .mjx-presup {display: block}
+.mjx-prestack > .mjx-presub {display: block}
+.mjx-delim-h > .mjx-char {display: inline-block}
+.mjx-surd {vertical-align: top}
+.mjx-mphantom * {visibility: hidden}
+.mjx-merror {background-color: #FFFF88; color: #CC0000; border: 1px solid #CC0000; padding: 2px 3px; font-style: normal; font-size: 90%}
+.mjx-annotation-xml {line-height: normal}
+.mjx-menclose > svg {fill: none; stroke: currentColor}
+.mjx-mtr {display: table-row}
+.mjx-mlabeledtr {display: table-row}
+.mjx-mtd {display: table-cell; text-align: center}
+.mjx-label {display: table-row}
+.mjx-box {display: inline-block}
+.mjx-block {display: block}
+.mjx-span {display: inline}
+.mjx-char {display: block; white-space: pre}
+.mjx-itable {display: inline-table; width: auto}
+.mjx-row {display: table-row}
+.mjx-cell {display: table-cell}
+.mjx-table {display: table; width: 100%}
+.mjx-line {display: block; height: 0}
+.mjx-strut {width: 0; padding-top: 1em}
+.mjx-vsize {width: 0}
+.MJXc-space1 {margin-left: .167em}
+.MJXc-space2 {margin-left: .222em}
+.MJXc-space3 {margin-left: .278em}
+.mjx-chartest {display: block; visibility: hidden; position: absolute; top: 0; line-height: normal; font-size: 500%}
+.mjx-chartest .mjx-char {display: inline}
+.mjx-chartest .mjx-box {padding-top: 1000px}
+.MJXc-processing {visibility: hidden; position: fixed; width: 0; height: 0; overflow: hidden}
+.MJXc-processed {display: none}
+.mjx-test {font-style: normal; font-weight: normal; font-size: 100%; font-size-adjust: none; text-indent: 0; text-transform: none; letter-spacing: normal; word-spacing: normal; overflow: hidden; height: 1px}
+.mjx-test.mjx-test-display {display: table!important}
+.mjx-test.mjx-test-inline {display: inline!important; margin-right: -1px}
+.mjx-test.mjx-test-default {display: block!important; clear: both}
+.mjx-ex-box {display: inline-block!important; position: absolute; overflow: hidden; min-height: 0; max-height: none; padding: 0; border: 0; margin: 0; width: 1px; height: 60ex}
+.mjx-test-inline .mjx-left-box {display: inline-block; width: 0; float: left}
+.mjx-test-inline .mjx-right-box {display: inline-block; width: 0; float: right}
+.mjx-test-display .mjx-right-box {display: table-cell!important; width: 10000em!important; min-width: 0; max-width: none; padding: 0; border: 0; margin: 0}
+#MathJax_CHTML_Tooltip {background-color: InfoBackground; color: InfoText; border: 1px solid black; box-shadow: 2px 2px 5px #AAAAAA; -webkit-box-shadow: 2px 2px 5px #AAAAAA; -moz-box-shadow: 2px 2px 5px #AAAAAA; -khtml-box-shadow: 2px 2px 5px #AAAAAA; padding: 3px 4px; z-index: 401; position: absolute; left: 0; top: 0; width: auto; height: auto; display: none}
+.mjx-chtml .mjx-noError {line-height: 1.2; vertical-align: ; font-size: 90%; text-align: left; color: black; padding: 1px 3px; border: 1px solid}
+.MJXc-TeX-unknown-R {font-family: STIXGeneral,'Cambria Math','Arial Unicode MS',serif; font-style: normal; font-weight: normal}
+.MJXc-TeX-unknown-I {font-family: STIXGeneral,'Cambria Math','Arial Unicode MS',serif; font-style: italic; font-weight: normal}
+.MJXc-TeX-unknown-B {font-family: STIXGeneral,'Cambria Math','Arial Unicode MS',serif; font-style: normal; font-weight: bold}
+.MJXc-TeX-unknown-BI {font-family: STIXGeneral,'Cambria Math','Arial Unicode MS',serif; font-style: italic; font-weight: bold}
+.MJXc-TeX-ams-R {font-family: MJXc-TeX-ams-R,MJXc-TeX-ams-Rw}
+.MJXc-TeX-cal-B {font-family: MJXc-TeX-cal-B,MJXc-TeX-cal-Bx,MJXc-TeX-cal-Bw}
+.MJXc-TeX-frak-R {font-family: MJXc-TeX-frak-R,MJXc-TeX-frak-Rw}
+.MJXc-TeX-frak-B {font-family: MJXc-TeX-frak-B,MJXc-TeX-frak-Bx,MJXc-TeX-frak-Bw}
+.MJXc-TeX-math-BI {font-family: MJXc-TeX-math-BI,MJXc-TeX-math-BIx,MJXc-TeX-math-BIw}
+.MJXc-TeX-sans-R {font-family: MJXc-TeX-sans-R,MJXc-TeX-sans-Rw}
+.MJXc-TeX-sans-B {font-family: MJXc-TeX-sans-B,MJXc-TeX-sans-Bx,MJXc-TeX-sans-Bw}
+.MJXc-TeX-sans-I {font-family: MJXc-TeX-sans-I,MJXc-TeX-sans-Ix,MJXc-TeX-sans-Iw}
+.MJXc-TeX-script-R {font-family: MJXc-TeX-script-R,MJXc-TeX-script-Rw}
+.MJXc-TeX-type-R {font-family: MJXc-TeX-type-R,MJXc-TeX-type-Rw}
+.MJXc-TeX-cal-R {font-family: MJXc-TeX-cal-R,MJXc-TeX-cal-Rw}
+.MJXc-TeX-main-B {font-family: MJXc-TeX-main-B,MJXc-TeX-main-Bx,MJXc-TeX-main-Bw}
+.MJXc-TeX-main-I {font-family: MJXc-TeX-main-I,MJXc-TeX-main-Ix,MJXc-TeX-main-Iw}
+.MJXc-TeX-main-R {font-family: MJXc-TeX-main-R,MJXc-TeX-main-Rw}
+.MJXc-TeX-math-I {font-family: MJXc-TeX-math-I,MJXc-TeX-math-Ix,MJXc-TeX-math-Iw}
+.MJXc-TeX-size1-R {font-family: MJXc-TeX-size1-R,MJXc-TeX-size1-Rw}
+.MJXc-TeX-size2-R {font-family: MJXc-TeX-size2-R,MJXc-TeX-size2-Rw}
+.MJXc-TeX-size3-R {font-family: MJXc-TeX-size3-R,MJXc-TeX-size3-Rw}
+.MJXc-TeX-size4-R {font-family: MJXc-TeX-size4-R,MJXc-TeX-size4-Rw}
+.MJXc-TeX-vec-R {font-family: MJXc-TeX-vec-R,MJXc-TeX-vec-Rw}
+.MJXc-TeX-vec-B {font-family: MJXc-TeX-vec-B,MJXc-TeX-vec-Bx,MJXc-TeX-vec-Bw}
+@font-face {font-family: MJXc-TeX-ams-R; src: local('MathJax_AMS'), local('MathJax_AMS-Regular')}
+@font-face {font-family: MJXc-TeX-ams-Rw; src /*1*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/eot/MathJax_AMS-Regular.eot'); src /*2*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/woff/MathJax_AMS-Regular.woff') format('woff'), url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/otf/MathJax_AMS-Regular.otf') format('opentype')}
+@font-face {font-family: MJXc-TeX-cal-B; src: local('MathJax_Caligraphic Bold'), local('MathJax_Caligraphic-Bold')}
+@font-face {font-family: MJXc-TeX-cal-Bx; src: local('MathJax_Caligraphic'); font-weight: bold}
+@font-face {font-family: MJXc-TeX-cal-Bw; src /*1*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/eot/MathJax_Caligraphic-Bold.eot'); src /*2*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/woff/MathJax_Caligraphic-Bold.woff') format('woff'), url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/otf/MathJax_Caligraphic-Bold.otf') format('opentype')}
+@font-face {font-family: MJXc-TeX-frak-R; src: local('MathJax_Fraktur'), local('MathJax_Fraktur-Regular')}
+@font-face {font-family: MJXc-TeX-frak-Rw; src /*1*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/eot/MathJax_Fraktur-Regular.eot'); src /*2*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/woff/MathJax_Fraktur-Regular.woff') format('woff'), url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/otf/MathJax_Fraktur-Regular.otf') format('opentype')}
+@font-face {font-family: MJXc-TeX-frak-B; src: local('MathJax_Fraktur Bold'), local('MathJax_Fraktur-Bold')}
+@font-face {font-family: MJXc-TeX-frak-Bx; src: local('MathJax_Fraktur'); font-weight: bold}
+@font-face {font-family: MJXc-TeX-frak-Bw; src /*1*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/eot/MathJax_Fraktur-Bold.eot'); src /*2*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/woff/MathJax_Fraktur-Bold.woff') format('woff'), url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/otf/MathJax_Fraktur-Bold.otf') format('opentype')}
+@font-face {font-family: MJXc-TeX-math-BI; src: local('MathJax_Math BoldItalic'), local('MathJax_Math-BoldItalic')}
+@font-face {font-family: MJXc-TeX-math-BIx; src: local('MathJax_Math'); font-weight: bold; font-style: italic}
+@font-face {font-family: MJXc-TeX-math-BIw; src /*1*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/eot/MathJax_Math-BoldItalic.eot'); src /*2*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/woff/MathJax_Math-BoldItalic.woff') format('woff'), url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/otf/MathJax_Math-BoldItalic.otf') format('opentype')}
+@font-face {font-family: MJXc-TeX-sans-R; src: local('MathJax_SansSerif'), local('MathJax_SansSerif-Regular')}
+@font-face {font-family: MJXc-TeX-sans-Rw; src /*1*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/eot/MathJax_SansSerif-Regular.eot'); src /*2*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/woff/MathJax_SansSerif-Regular.woff') format('woff'), url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/otf/MathJax_SansSerif-Regular.otf') format('opentype')}
+@font-face {font-family: MJXc-TeX-sans-B; src: local('MathJax_SansSerif Bold'), local('MathJax_SansSerif-Bold')}
+@font-face {font-family: MJXc-TeX-sans-Bx; src: local('MathJax_SansSerif'); font-weight: bold}
+@font-face {font-family: MJXc-TeX-sans-Bw; src /*1*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/eot/MathJax_SansSerif-Bold.eot'); src /*2*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/woff/MathJax_SansSerif-Bold.woff') format('woff'), url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/otf/MathJax_SansSerif-Bold.otf') format('opentype')}
+@font-face {font-family: MJXc-TeX-sans-I; src: local('MathJax_SansSerif Italic'), local('MathJax_SansSerif-Italic')}
+@font-face {font-family: MJXc-TeX-sans-Ix; src: local('MathJax_SansSerif'); font-style: italic}
+@font-face {font-family: MJXc-TeX-sans-Iw; src /*1*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/eot/MathJax_SansSerif-Italic.eot'); src /*2*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/woff/MathJax_SansSerif-Italic.woff') format('woff'), url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/otf/MathJax_SansSerif-Italic.otf') format('opentype')}
+@font-face {font-family: MJXc-TeX-script-R; src: local('MathJax_Script'), local('MathJax_Script-Regular')}
+@font-face {font-family: MJXc-TeX-script-Rw; src /*1*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/eot/MathJax_Script-Regular.eot'); src /*2*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/woff/MathJax_Script-Regular.woff') format('woff'), url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/otf/MathJax_Script-Regular.otf') format('opentype')}
+@font-face {font-family: MJXc-TeX-type-R; src: local('MathJax_Typewriter'), local('MathJax_Typewriter-Regular')}
+@font-face {font-family: MJXc-TeX-type-Rw; src /*1*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/eot/MathJax_Typewriter-Regular.eot'); src /*2*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/woff/MathJax_Typewriter-Regular.woff') format('woff'), url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/otf/MathJax_Typewriter-Regular.otf') format('opentype')}
+@font-face {font-family: MJXc-TeX-cal-R; src: local('MathJax_Caligraphic'), local('MathJax_Caligraphic-Regular')}
+@font-face {font-family: MJXc-TeX-cal-Rw; src /*1*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/eot/MathJax_Caligraphic-Regular.eot'); src /*2*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/woff/MathJax_Caligraphic-Regular.woff') format('woff'), url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/otf/MathJax_Caligraphic-Regular.otf') format('opentype')}
+@font-face {font-family: MJXc-TeX-main-B; src: local('MathJax_Main Bold'), local('MathJax_Main-Bold')}
+@font-face {font-family: MJXc-TeX-main-Bx; src: local('MathJax_Main'); font-weight: bold}
+@font-face {font-family: MJXc-TeX-main-Bw; src /*1*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/eot/MathJax_Main-Bold.eot'); src /*2*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/woff/MathJax_Main-Bold.woff') format('woff'), url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/otf/MathJax_Main-Bold.otf') format('opentype')}
+@font-face {font-family: MJXc-TeX-main-I; src: local('MathJax_Main Italic'), local('MathJax_Main-Italic')}
+@font-face {font-family: MJXc-TeX-main-Ix; src: local('MathJax_Main'); font-style: italic}
+@font-face {font-family: MJXc-TeX-main-Iw; src /*1*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/eot/MathJax_Main-Italic.eot'); src /*2*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/woff/MathJax_Main-Italic.woff') format('woff'), url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/otf/MathJax_Main-Italic.otf') format('opentype')}
+@font-face {font-family: MJXc-TeX-main-R; src: local('MathJax_Main'), local('MathJax_Main-Regular')}
+@font-face {font-family: MJXc-TeX-main-Rw; src /*1*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/eot/MathJax_Main-Regular.eot'); src /*2*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/woff/MathJax_Main-Regular.woff') format('woff'), url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/otf/MathJax_Main-Regular.otf') format('opentype')}
+@font-face {font-family: MJXc-TeX-math-I; src: local('MathJax_Math Italic'), local('MathJax_Math-Italic')}
+@font-face {font-family: MJXc-TeX-math-Ix; src: local('MathJax_Math'); font-style: italic}
+@font-face {font-family: MJXc-TeX-math-Iw; src /*1*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/eot/MathJax_Math-Italic.eot'); src /*2*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/woff/MathJax_Math-Italic.woff') format('woff'), url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/otf/MathJax_Math-Italic.otf') format('opentype')}
+@font-face {font-family: MJXc-TeX-size1-R; src: local('MathJax_Size1'), local('MathJax_Size1-Regular')}
+@font-face {font-family: MJXc-TeX-size1-Rw; src /*1*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/eot/MathJax_Size1-Regular.eot'); src /*2*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/woff/MathJax_Size1-Regular.woff') format('woff'), url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/otf/MathJax_Size1-Regular.otf') format('opentype')}
+@font-face {font-family: MJXc-TeX-size2-R; src: local('MathJax_Size2'), local('MathJax_Size2-Regular')}
+@font-face {font-family: MJXc-TeX-size2-Rw; src /*1*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/eot/MathJax_Size2-Regular.eot'); src /*2*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/woff/MathJax_Size2-Regular.woff') format('woff'), url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/otf/MathJax_Size2-Regular.otf') format('opentype')}
+@font-face {font-family: MJXc-TeX-size3-R; src: local('MathJax_Size3'), local('MathJax_Size3-Regular')}
+@font-face {font-family: MJXc-TeX-size3-Rw; src /*1*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/eot/MathJax_Size3-Regular.eot'); src /*2*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/woff/MathJax_Size3-Regular.woff') format('woff'), url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/otf/MathJax_Size3-Regular.otf') format('opentype')}
+@font-face {font-family: MJXc-TeX-size4-R; src: local('MathJax_Size4'), local('MathJax_Size4-Regular')}
+@font-face {font-family: MJXc-TeX-size4-Rw; src /*1*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/eot/MathJax_Size4-Regular.eot'); src /*2*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/woff/MathJax_Size4-Regular.woff') format('woff'), url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/otf/MathJax_Size4-Regular.otf') format('opentype')}
+@font-face {font-family: MJXc-TeX-vec-R; src: local('MathJax_Vector'), local('MathJax_Vector-Regular')}
+@font-face {font-family: MJXc-TeX-vec-Rw; src /*1*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/eot/MathJax_Vector-Regular.eot'); src /*2*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/woff/MathJax_Vector-Regular.woff') format('woff'), url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/otf/MathJax_Vector-Regular.otf') format('opentype')}
+@font-face {font-family: MJXc-TeX-vec-B; src: local('MathJax_Vector Bold'), local('MathJax_Vector-Bold')}
+@font-face {font-family: MJXc-TeX-vec-Bx; src: local('MathJax_Vector'); font-weight: bold}
+@font-face {font-family: MJXc-TeX-vec-Bw; src /*1*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/eot/MathJax_Vector-Bold.eot'); src /*2*/: url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/woff/MathJax_Vector-Bold.woff') format('woff'), url('https://assets.hackmd.io/build/MathJax/fonts/HTML-CSS/TeX/otf/MathJax_Vector-Bold.otf') format('opentype')}
+</style><style id="googleidentityservice_button_styles" nonce="">.qJTHM{-moz-user-select:none;color:#202124;direction:ltr;font-family:"Roboto-Regular",arial,sans-serif;font-weight:400;margin:0;overflow:hidden}.ynRLnc{left:-9999px;position:absolute;top:-9999px}.L6cTce{display:none}.bltWBb{word-break:break-all}.hSRGPd{color:#1a73e8;cursor:pointer;font-weight:500;text-decoration:none}.Bz112c-W3lGp{height:16px;width:16px}.Bz112c-E3DyYd{height:20px;width:20px}.Bz112c-r9oPif{height:24px;width:24px}.Bz112c-uaxL4e{-moz-border-radius:10px;border-radius:10px}.LgbsSe-Bz112c{display:block}.S9gUrf-YoZ4jf,.S9gUrf-YoZ4jf *{border:none;margin:0;padding:0}.fFW7wc-ibnC6b>.aZ2wEe>div{border-color:#4285f4}.P1ekSe-ZMv3u>div:nth-child(1){background-color:#1a73e8!important}.P1ekSe-ZMv3u>div:nth-child(2),.P1ekSe-ZMv3u>div:nth-child(3){background-image:linear-gradient(to right,rgba(255,255,255,.7),rgba(255,255,255,.7)),linear-gradient(to right,#1a73e8,#1a73e8)!important}.haAclf{display:inline-block}.nsm7Bb-HzV7m-LgbsSe{border-radius:4px;box-sizing:border-box;transition:background-color .218s,border-color .218s;-moz-user-select:none;background-color:#fff;background-image:none;border:1px solid #dadce0;color:#3c4043;cursor:pointer;font-family:"Google Sans",arial,sans-serif;font-size:14px;height:40px;letter-spacing:0.25px;outline:none;overflow:hidden;padding:0 12px;position:relative;text-align:center;vertical-align:middle;white-space:nowrap;width:auto}@media screen and (-ms-high-contrast:active){.nsm7Bb-HzV7m-LgbsSe{border:2px solid windowText;color:windowText}}.nsm7Bb-HzV7m-LgbsSe.pSzOP-SxQuSe{font-size:14px;height:32px;letter-spacing:0.25px;padding:0 10px}.nsm7Bb-HzV7m-LgbsSe.purZT-SxQuSe{font-size:11px;height:20px;letter-spacing:0.3px;padding:0 8px}.nsm7Bb-HzV7m-LgbsSe.Bz112c-LgbsSe{padding:0;width:40px}.nsm7Bb-HzV7m-LgbsSe.Bz112c-LgbsSe.pSzOP-SxQuSe{width:32px}.nsm7Bb-HzV7m-LgbsSe.Bz112c-LgbsSe.purZT-SxQuSe{width:20px}.nsm7Bb-HzV7m-LgbsSe.JGcpL-RbRzK{border-radius:20px}.nsm7Bb-HzV7m-LgbsSe.JGcpL-RbRzK.pSzOP-SxQuSe{border-radius:16px}.nsm7Bb-HzV7m-LgbsSe.JGcpL-RbRzK.purZT-SxQuSe{border-radius:10px}.nsm7Bb-HzV7m-LgbsSe.MFS4be-Ia7Qfc{border:none;color:#fff}.nsm7Bb-HzV7m-LgbsSe.MFS4be-v3pZbf-Ia7Qfc{background-color:#1a73e8}.nsm7Bb-HzV7m-LgbsSe.MFS4be-JaPV2b-Ia7Qfc{background-color:#202124;color:#e8eaed}.nsm7Bb-HzV7m-LgbsSe .nsm7Bb-HzV7m-LgbsSe-Bz112c{height:18px;margin-right:8px;min-width:18px;width:18px}.nsm7Bb-HzV7m-LgbsSe.pSzOP-SxQuSe .nsm7Bb-HzV7m-LgbsSe-Bz112c{height:14px;min-width:14px;width:14px}.nsm7Bb-HzV7m-LgbsSe.purZT-SxQuSe .nsm7Bb-HzV7m-LgbsSe-Bz112c{height:10px;min-width:10px;width:10px}.nsm7Bb-HzV7m-LgbsSe.jVeSEe .nsm7Bb-HzV7m-LgbsSe-Bz112c{margin-left:8px;margin-right:-4px}.nsm7Bb-HzV7m-LgbsSe.Bz112c-LgbsSe .nsm7Bb-HzV7m-LgbsSe-Bz112c{margin:0;padding:10px}.nsm7Bb-HzV7m-LgbsSe.Bz112c-LgbsSe.pSzOP-SxQuSe .nsm7Bb-HzV7m-LgbsSe-Bz112c{padding:8px}.nsm7Bb-HzV7m-LgbsSe.Bz112c-LgbsSe.purZT-SxQuSe .nsm7Bb-HzV7m-LgbsSe-Bz112c{padding:4px}.nsm7Bb-HzV7m-LgbsSe .nsm7Bb-HzV7m-LgbsSe-Bz112c-haAclf{border-top-left-radius:3px;border-bottom-left-radius:3px;display:-webkit-box;display:-moz-box;display:-ms-flexbox;display:-webkit-flex;display:flex;justify-content:center;align-items:center;background-color:#fff;height:36px;margin-left:-10px;margin-right:12px;min-width:36px;width:36px}.nsm7Bb-HzV7m-LgbsSe .nsm7Bb-HzV7m-LgbsSe-Bz112c-haAclf .nsm7Bb-HzV7m-LgbsSe-Bz112c,.nsm7Bb-HzV7m-LgbsSe.Bz112c-LgbsSe .nsm7Bb-HzV7m-LgbsSe-Bz112c-haAclf .nsm7Bb-HzV7m-LgbsSe-Bz112c{margin:0;padding:0}.nsm7Bb-HzV7m-LgbsSe.pSzOP-SxQuSe .nsm7Bb-HzV7m-LgbsSe-Bz112c-haAclf{height:28px;margin-left:-8px;margin-right:10px;min-width:28px;width:28px}.nsm7Bb-HzV7m-LgbsSe.purZT-SxQuSe .nsm7Bb-HzV7m-LgbsSe-Bz112c-haAclf{height:16px;margin-left:-6px;margin-right:8px;min-width:16px;width:16px}.nsm7Bb-HzV7m-LgbsSe.Bz112c-LgbsSe .nsm7Bb-HzV7m-LgbsSe-Bz112c-haAclf{border-radius:3px;margin-left:2px;margin-right:0;padding:0}.nsm7Bb-HzV7m-LgbsSe.JGcpL-RbRzK .nsm7Bb-HzV7m-LgbsSe-Bz112c-haAclf{border-radius:18px}.nsm7Bb-HzV7m-LgbsSe.pSzOP-SxQuSe.JGcpL-RbRzK .nsm7Bb-HzV7m-LgbsSe-Bz112c-haAclf{border-radius:14px}.nsm7Bb-HzV7m-LgbsSe.purZT-SxQuSe.JGcpL-RbRzK .nsm7Bb-HzV7m-LgbsSe-Bz112c-haAclf{border-radius:8px}.nsm7Bb-HzV7m-LgbsSe .nsm7Bb-HzV7m-LgbsSe-bN97Pc-sM5MNb{display:-webkit-box;display:-moz-box;display:-ms-flexbox;display:-webkit-flex;display:flex;align-items:center;flex-direction:row;justify-content:space-between;flex-wrap:nowrap;height:100%;position:relative;width:100%}.nsm7Bb-HzV7m-LgbsSe .oXtfBe-l4eHX{justify-content:center}.nsm7Bb-HzV7m-LgbsSe .nsm7Bb-HzV7m-LgbsSe-BPrWId{flex-grow:1;font-family:"Google Sans",arial,sans-serif;font-weight:500;overflow:hidden;text-overflow:ellipsis;vertical-align:top}.nsm7Bb-HzV7m-LgbsSe.purZT-SxQuSe .nsm7Bb-HzV7m-LgbsSe-BPrWId{font-weight:300}.nsm7Bb-HzV7m-LgbsSe .oXtfBe-l4eHX .nsm7Bb-HzV7m-LgbsSe-BPrWId{flex-grow:0}.nsm7Bb-HzV7m-LgbsSe .nsm7Bb-HzV7m-LgbsSe-MJoBVe{transition:background-color .218s;bottom:0;left:0;position:absolute;right:0;top:0}.nsm7Bb-HzV7m-LgbsSe:hover,.nsm7Bb-HzV7m-LgbsSe:focus{box-shadow:none;border-color:#d2e3fc;outline:none}.nsm7Bb-HzV7m-LgbsSe:hover .nsm7Bb-HzV7m-LgbsSe-MJoBVe,.nsm7Bb-HzV7m-LgbsSe:focus .nsm7Bb-HzV7m-LgbsSe-MJoBVe{background:rgba(66,133,244,.04)}.nsm7Bb-HzV7m-LgbsSe:active .nsm7Bb-HzV7m-LgbsSe-MJoBVe{background:rgba(66,133,244,.1)}.nsm7Bb-HzV7m-LgbsSe.MFS4be-Ia7Qfc:hover .nsm7Bb-HzV7m-LgbsSe-MJoBVe,.nsm7Bb-HzV7m-LgbsSe.MFS4be-Ia7Qfc:focus .nsm7Bb-HzV7m-LgbsSe-MJoBVe{background:rgba(255,255,255,.24)}.nsm7Bb-HzV7m-LgbsSe.MFS4be-Ia7Qfc:active .nsm7Bb-HzV7m-LgbsSe-MJoBVe{background:rgba(255,255,255,.32)}.nsm7Bb-HzV7m-LgbsSe .n1UuX-DkfjY{border-radius:50%;display:-webkit-box;display:-moz-box;display:-ms-flexbox;display:-webkit-flex;display:flex;height:20px;margin-left:-4px;margin-right:8px;min-width:20px;width:20px}.nsm7Bb-HzV7m-LgbsSe.jVeSEe .nsm7Bb-HzV7m-LgbsSe-BPrWId{font-family:"Roboto";font-size:12px;text-align:left}.nsm7Bb-HzV7m-LgbsSe.jVeSEe .nsm7Bb-HzV7m-LgbsSe-BPrWId .ssJRIf,.nsm7Bb-HzV7m-LgbsSe.jVeSEe .nsm7Bb-HzV7m-LgbsSe-BPrWId .K4efff .fmcmS{overflow:hidden;text-overflow:ellipsis}.nsm7Bb-HzV7m-LgbsSe.jVeSEe .nsm7Bb-HzV7m-LgbsSe-BPrWId .K4efff{display:-webkit-box;display:-moz-box;display:-ms-flexbox;display:-webkit-flex;display:flex;align-items:center;color:#5f6368;fill:#5f6368;font-size:11px;font-weight:400}.nsm7Bb-HzV7m-LgbsSe.jVeSEe.MFS4be-Ia7Qfc .nsm7Bb-HzV7m-LgbsSe-BPrWId .K4efff{color:#e8eaed;fill:#e8eaed}.nsm7Bb-HzV7m-LgbsSe.jVeSEe .nsm7Bb-HzV7m-LgbsSe-BPrWId .K4efff .Bz112c{height:18px;margin:-3px -3px -3px 2px;min-width:18px;width:18px}.nsm7Bb-HzV7m-LgbsSe.jVeSEe .nsm7Bb-HzV7m-LgbsSe-Bz112c-haAclf{border-top-left-radius:0;border-bottom-left-radius:0;border-top-right-radius:3px;border-bottom-right-radius:3px;margin-left:12px;margin-right:-10px}.nsm7Bb-HzV7m-LgbsSe.jVeSEe.JGcpL-RbRzK .nsm7Bb-HzV7m-LgbsSe-Bz112c-haAclf{border-radius:18px}.L5Fo6c-sM5MNb{border:0;display:block;left:0;position:relative;top:0}.L5Fo6c-bF1uUb{-moz-border-radius:4px;border-radius:4px;bottom:0;cursor:pointer;left:0;position:absolute;right:0;top:0}.L5Fo6c-bF1uUb:focus{border:none;outline:none}sentinel{}</style><link id="googleidentityservice" type="text/css" media="all" rel="stylesheet" href="Sujet_files/style.css"></head>
+
+<body style=""><div id="MathJax_Message" style="display: none;"></div>
+    <div class="ui-infobar container-fluid unselectable hidden-print comment-enabled">
+        <div class="row">
+            <div class="col-xs-12 ui-infobar-inner">
+                <div class="ui-infobar__user-info">
+                    <ul class="list-inline h-[28px] mb-0">
+                        <li>
+                            <div class="flex text-4 gap-[9px]">
+                                
+                                    <span class="flex items-center justify-center ui-owner-team" data-profile="ia02">
+                                         <a class="ui-user-icon m-0 inline-block w-[28px] h-[28px] user-card-popover" style="background-image: url(data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+PHN2ZyB4bWxuczpyZGY9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkvMDIvMjItcmRmLXN5bnRheC1ucyMiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgaGVpZ2h0PSI5NiIgd2lkdGg9Ijk2IiB2ZXJzaW9uPSIxLjEiIHZpZXdCb3g9IjAgMCA5NiA5NiI+PGc+PHJlY3Qgd2lkdGg9Ijk2IiBoZWlnaHQ9Ijk2IiBmaWxsPSIjZDVkYjM0IiAvPjx0ZXh0IGZvbnQtc2l6ZT0iNjRweCIgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiNmZmZmZmYiPjx0c3BhbiB4PSI0OCIgeT0iNzIiIHN0cm9rZS13aWR0aD0iLjI2NDU4cHgiIGZpbGw9IiNmZmZmZmYiPkk8L3RzcGFuPjwvdGV4dD48L2c+PC9zdmc+);" target="_blank" href="https://hackmd.io/@ia02" data-toggle="popover" data-original-title="" title=""></a>
+                                    </span>
+                                
+
+                                <div class="flex flex-col items-start">
+                                    
+                                        <a class="font-bold text-gray-900 cursor-pointer ui-owner-team hover:underline user-card-popover" data-profile="ia02" href="https://hackmd.io/@ia02" data-toggle="popover" data-original-title="" title="">
+                                            ia02
+                                        </a>
+                                    
+
+
+                                    <div class="flex">
+                                        <div>
+                                            <span class="ui-status-lastchange" title="Wed, Jun 21, 2023 10:41 AM">changed 18 days ago</span>
+                                            <span class="ui-lastchange" data-createtime="1681996078273" data-updatetime="1687336869220"></span>
+                                        </div>
+
+                                        
+
+                                        <span class="ml-1 text-gray-400 ui-more-info hmd-dn" data-toggle="popover" data-original-title="" title="">
+                                             <i class="fa fa-fw align-middle ui-connectedGithubIcon fa-github"></i>
+
+                                            <div class="more-info-raw hmd-dn">
+                                                <span class="ui-connectedGithub note-status-row hmd-dn">
+                                                    <i class="fa ui-connectedGithubIcon fa-github"></i>
+                                                    <a class="text-gray-600 ui-synced-text hover:text-gray-600 focus:text-gray-600">Linked with GitHub</a>
+
+                                                    
+                                                        <br>
+                                                        <a class="file-path" target="_blank"></a>
+                                                    
+                                                </span>
+                                            </div>
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="items-center hmd-text-right ui-infobar__actions">
+                    <ul class="mb-0 list-inline">
+                        <li>
+                            
+                                <a class="ui-signin community-button hidden-xs" href="#">
+                                    <span class="text">
+                                        <i class="fa fa-fw fa-heart-o"></i>
+                                        <span class="count">1</span>
+                                    </span>
+                                </a>
+
+                                <a class="ui-signin community-button hidden-xs" href="#">
+                                    <span class="text">
+                                        <i class="fa fa-fw fa-bookmark-o"></i>
+                                    </span>
+                                </a>
+
+                                <a class="ui-signin community-button hidden-xs" href="#">
+                                    <span class="text">
+                                        <i class="fa fa-fw fa-bell-o"></i>
+                                    </span>
+                                </a>
+                            
+                        </li>
+
+                        
+                    </ul>
+                </div>
+
+                <div class="clearfix"></div>
+            </div>
+        </div>
+        
+        <div class="ui-comment-app" id="hackmd-app" style="right: -45px; width: 45px;">
+            <div id="comment-app"><div class="open-comments"><div><button class="ui-open-comments btn btn-default"><i class="fa fa-commenting" aria-hidden="true"></i><span class="text">0 comments</span></button></div><div style="display: none;"><div class="comment-settings" id="comment-settings"><img src="Sujet_files/comments-settings.svg" style="margin-right: 5px;"><div>Settings</div></div></div></div><div class="comments-scroller"><div class="comments-containers"></div></div></div>
+        </div>
+        
+    </div>
+
+    <!-- Markdown rendered container -->
+    <div id="doc" class="container-fluid markdown-body comment-enabled" data-hard-breaks="true"><div class="title-tags-preview"><button class="text-gray-500 px-2.5 py-2 font-semibold text-[14px] leading-[16px] border-none bg-transparent rounded-[4px] hover:bg-gray-100 mb-1.5">Show title &amp; tags<i class="ml-0.5 fa fa-angle-down" aria-hidden="true"></i></button></div><h2 class="part" data-startline="1" data-endline="1" id="0-Historique-du-document" data-id="0-Historique-du-document"><a class="anchor hidden-xs" href="#0-Historique-du-document" title="0-Historique-du-document" smoothhashscroll=""><span class="octicon octicon-link"></span></a><span data-position="3" data-size="25">0. Historique du document</span></h2><ul class="part" data-startline="3" data-endline="8" data-position="30" data-size="0">
+<li class="" data-startline="3" data-endline="3" data-position="32" data-size="0"><span data-position="32" data-size="35">02/05/2023 : 0.1.0 version initiale</span></li>
+<li class="" data-startline="4" data-endline="4" data-position="71" data-size="0"><span data-position="71" data-size="63">05/05/2023 : 0.2.0 ajout de précisions sur l’utilité du costume</span></li>
+<li class="" data-startline="5" data-endline="5" data-position="137" data-size="0"><span data-position="137" data-size="155">02/06/2023
+ : 0.3.0 modifications suites aux questions posées en cours et sur le 
+forum (zone d’écoute, clarification de la neutralisation et quelques 
+typos)</span></li>
+<li class="" data-startline="6" data-endline="6" data-position="295" data-size="0"><span data-position="295" data-size="127">14/06/2023 : 0.4.0 description complète des possibilités de camouflage d’Hitman lorsqu’il se situe sur la même case qu’un civil</span></li>
+<li class="" data-startline="7" data-endline="8" data-position="425" data-size="0"><span data-position="425" data-size="36">21/06/2023 : 0.4.1 précision sur le </span><a href="http://readme.md/" target="_blank" rel="noopener"><span data-position="461" data-size="9">Readme.md</span></a><span data-position="470" data-size="10"> à fournir</span></li>
+</ul><h2 class="part" data-startline="9" data-endline="9" id="1-Présentation-du-projet" data-id="1-Présentation-du-projet"><a class="anchor hidden-xs" href="#1-Présentation-du-projet" title="1-Présentation-du-projet" smoothhashscroll=""><span class="octicon octicon-link"></span></a><span data-position="485" data-size="25">1. Présentation du projet</span></h2><p class="part" data-startline="11" data-endline="11" data-position="512" data-size="0"><img src="Sujet_files/Hitman_reboot_vector_logo.svg" alt="logo" class="" data-position="512" data-size="90" loading="lazy"></p><p class="part" data-startline="13" data-endline="13" data-position="604" data-size="0"><a href="https://fr.wikipedia.org/wiki/Hitman_(s%C3%A9rie_de_jeux_vid%C3%A9o)" target="_blank" rel="noopener"><span data-position="604" data-size="58">https://fr.wikipedia.org/wiki/Hitman_(série_de_jeux_vidéo)</span></a></p><p class="part" data-startline="15" data-endline="15" data-position="674" data-size="0"><span data-position="674" data-size="247">Vous
+ incarnez Hitman, un tueur à gages professionnel, devant se débarrasser 
+de sa cible, l’agent double Dhalek Benechale qui a changé d’agence. 
+Dhalek organise une réception pour son anniversaire et vous en profitez 
+pour organiser son élimination.</span></p><p class="part" data-startline="17" data-endline="17" data-position="923" data-size="0"><span data-position="923" data-size="46">Votre mission s’effectuera en deux étapes. La </span><strong data-position="969" data-size="0"><span data-position="971" data-size="7">phase 1</span></strong><span data-position="980" data-size="385">
+ correspond à une phase de repérage de la salle de réception, quelques 
+heures avant le dit anniversaire. Dhalek ne sera pas encore présent sur 
+les lieux, mais vous devrez repérer comment accéder aux lieux où il 
+pourra par la suite se situer, évaluer où se situent la sécurité et tous
+ les objets pouvant vous aider dans votre mission. Vous devrez le faire 
+le plus discrètement possible.</span></p><p class="part" data-startline="19" data-endline="19" data-position="1367" data-size="0"><span data-position="1367" data-size="3">La </span><strong data-position="1370" data-size="0"><span data-position="1372" data-size="7">phase 2</span></strong><span data-position="1381" data-size="271">
+ se déroule pendant l’anniversaire, et Dhalek après avoir consommé du 
+champagne et des petits fours est parti se reposer. Vous devez alors 
+aller chercher une corde de piano (repérée lors de la phase 1) pour 
+aller l’éliminer pendant son sommeil. La discrétion est de mise.</span></p><p class="part" data-startline="21" data-endline="21" data-position="1654" data-size="0"><span data-position="1654" data-size="142">L’objectif
+ du projet est de gérer la phase 1 à l’aide de la logique 
+propositionnelle et la phase 2 en utilisant des méthodes de 
+planification.</span></p><h2 class="part" data-startline="23" data-endline="23" id="2-Règles-du-jeu" data-id="2-Règles-du-jeu"><a class="anchor hidden-xs" href="#2-Règles-du-jeu" title="2-Règles-du-jeu" smoothhashscroll=""><span class="octicon octicon-link"></span></a><span data-position="1801" data-size="16">2. Règles du jeu</span></h2><h3 class="part" data-startline="25" data-endline="25" id="21-Description-de-l’environnement" data-id="21-Description-de-l’environnement"><a class="anchor hidden-xs" href="#21-Description-de-l’environnement" title="21-Description-de-l’environnement" smoothhashscroll=""><span class="octicon octicon-link"></span></a><span data-position="1823" data-size="35">2.1. Description de l’environnement</span></h3><p class="part" data-startline="27" data-endline="27" data-position="1860" data-size="0"><span data-position="1860" data-size="74">Le bâtiment de la salle de réception est un monde rectangulaire de taille </span><span class="mathjax"><span class="MathJax_Preview" style="color: inherit;"></span><span id="MathJax-Element-1-Frame" class="mjx-chtml MathJax_CHTML" tabindex="0" style="font-size: 116%; position: relative;" data-mathml="&lt;math xmlns=&quot;http://www.w3.org/1998/Math/MathML&quot;&gt;&lt;mi&gt;m&lt;/mi&gt;&lt;/math&gt;" role="presentation"><span id="MJXc-Node-1" class="mjx-math" aria-hidden="true"><span id="MJXc-Node-2" class="mjx-mrow"><span id="MJXc-Node-3" class="mjx-mi"><span class="mjx-char MJXc-TeX-math-I" style="padding-top: 0.218em; padding-bottom: 0.272em;">m</span></span></span></span><span class="MJX_Assistive_MathML" role="presentation"><math xmlns="http://www.w3.org/1998/Math/MathML"><mi>m</mi></math></span></span><script type="math/tex" id="MathJax-Element-1">m</script></span><span data-position="1937" data-size="8"> lignes </span><span class="mathjax"><span class="MathJax_Preview" style="color: inherit;"></span><span id="MathJax-Element-2-Frame" class="mjx-chtml MathJax_CHTML" tabindex="0" style="font-size: 116%; position: relative;" data-mathml="&lt;math xmlns=&quot;http://www.w3.org/1998/Math/MathML&quot;&gt;&lt;mo&gt;&amp;#x00D7;&lt;/mo&gt;&lt;/math&gt;" role="presentation"><span id="MJXc-Node-4" class="mjx-math" aria-hidden="true"><span id="MJXc-Node-5" class="mjx-mrow"><span id="MJXc-Node-6" class="mjx-mo"><span class="mjx-char MJXc-TeX-main-R" style="padding-top: 0.218em; padding-bottom: 0.326em;">×</span></span></span></span><span class="MJX_Assistive_MathML" role="presentation"><math xmlns="http://www.w3.org/1998/Math/MathML"><mo>×</mo></math></span></span><script type="math/tex" id="MathJax-Element-2">\times</script></span><span data-position="1953" data-size="1"> </span><span class="mathjax"><span class="MathJax_Preview" style="color: inherit;"></span><span id="MathJax-Element-3-Frame" class="mjx-chtml MathJax_CHTML" tabindex="0" style="font-size: 116%; position: relative;" data-mathml="&lt;math xmlns=&quot;http://www.w3.org/1998/Math/MathML&quot;&gt;&lt;mi&gt;n&lt;/mi&gt;&lt;/math&gt;" role="presentation"><span id="MJXc-Node-7" class="mjx-math" aria-hidden="true"><span id="MJXc-Node-8" class="mjx-mrow"><span id="MJXc-Node-9" class="mjx-mi"><span class="mjx-char MJXc-TeX-math-I" style="padding-top: 0.218em; padding-bottom: 0.272em;">n</span></span></span></span><span class="MJX_Assistive_MathML" role="presentation"><math xmlns="http://www.w3.org/1998/Math/MathML"><mi>n</mi></math></span></span><script type="math/tex" id="MathJax-Element-3">n</script></span><span data-position="1957" data-size="103"> colonnes. On connaît également le nombre d’invités et le nombre de gardes dans la pièce. Le monde est </span><em data-position="2060" data-size="0"><span data-position="2061" data-size="8">statique</span></em><span data-position="2070" data-size="27"> : seul Hitman peut bouger.</span></p><p class="part" data-startline="29" data-endline="29" data-position="2099" data-size="0"><img src="Sujet_files/7q1cFph.png" alt="exemple" class="" data-position="2099" data-size="43" loading="lazy"></p><p class="part" data-startline="31" data-endline="31" data-position="2144" data-size="0"><span data-position="2144" data-size="29">Sur l’exemple, Hitman est en </span><code data-position="2174" data-size="5">(1,0)</code><span data-position="2180" data-size="16">, les gardes en </span><code data-position="2197" data-size="5">(4,5)</code><span data-position="2203" data-size="3">et </span><code data-position="2207" data-size="5">(3,2)</code><span data-position="2213" data-size="19"> et les invités en </span><code data-position="2233" data-size="5">(5,2)</code><span data-position="2239" data-size="2">, </span><code data-position="2242" data-size="5">(5,3)</code><span data-position="2248" data-size="4"> et </span><code data-position="2253" data-size="5">(6,2)</code><span data-position="2259" data-size="27">. La corde de piano est en </span><code data-position="2287" data-size="5">(5,0)</code><span data-position="2293" data-size="16">, le costume en </span><code data-position="2310" data-size="5">(3,5)</code><span data-position="2316" data-size="32"> et la cible potentiellement en </span><code data-position="2349" data-size="5">(0,3)</code><span data-position="2355" data-size="1">.</span></p><p class="part" data-startline="33" data-endline="33" data-position="2359" data-size="0"><span data-position="2359" data-size="132">Une
+ case ne peut contenir qu’une seule personne, un seul objet, être vide 
+ou être un mur. 3 types de personnes sont présentes : les </span><em data-position="2491" data-size="0"><span data-position="2492" data-size="7">invités</span></em><span data-position="2500" data-size="15"> (civils), les </span><em data-position="2515" data-size="0"><span data-position="2516" data-size="6">gardes</span></em><span data-position="2523" data-size="7"> et la </span><em data-position="2530" data-size="0"><span data-position="2531" data-size="5">cible</span></em><span data-position="2537" data-size="72">. Chacun regarde dans une direction (N/S/E/O), sauf la cible. Il y a un </span><em data-position="2609" data-size="0"><span data-position="2610" data-size="11">déguisement</span></em><span data-position="2622" data-size="131">
+ (un costume de serveur, permettant de passer dans le champs de vision 
+des gardes sans pénalité) caché dans la carte, ainsi qu’une </span><em data-position="2753" data-size="0"><span data-position="2754" data-size="14">corde de piano</span></em><span data-position="2769" data-size="42"> (seul objet permettant de tuer la cible).</span></p><h3 class="part" data-startline="35" data-endline="35" id="22-Percepts" data-id="22-Percepts"><a class="anchor hidden-xs" href="#22-Percepts" title="22-Percepts" smoothhashscroll=""><span class="octicon octicon-link"></span></a><span data-position="2817" data-size="13">2.2. Percepts</span></h3><p class="part" data-startline="37" data-endline="37" data-position="2832" data-size="0"><span data-position="2832" data-size="33">Vision (commune aux deux phases):</span></p><p class="part" data-startline="39" data-endline="39" data-position="2867" data-size="0"><span data-position="2867" data-size="199">Tous
+ les champs de vision sont en ligne droite par rapport à l’orientation 
+du personnage (Hitman, civil, garde). Cette vision s’arrête au premier 
+obstacle/personne/objet/mur, ou à sa portée maximum :</span></p><ul class="part" data-startline="41" data-endline="45" data-position="3068" data-size="0">
+<li class="" data-startline="41" data-endline="41" data-position="3070" data-size="0"><span data-position="3070" data-size="16">Hitman = 3 cases</span></li>
+<li class="" data-startline="42" data-endline="42" data-position="3089" data-size="0"><span data-position="3089" data-size="16">Gardes = 2 cases</span></li>
+<li class="" data-startline="43" data-endline="43" data-position="3108" data-size="0"><span data-position="3108" data-size="15">Civils = 1 case</span></li>
+<li class="" data-startline="44" data-endline="45" data-position="3126" data-size="0"><span data-position="3126" data-size="14">Cible = 0 case</span></li>
+</ul><p class="part" data-startline="46" data-endline="46" data-position="3142" data-size="0"><span data-position="3142" data-size="303">Lorsque
+ Hitman se situe sur la même case qu’un civil (et uniquement un civil), 
+il est alors camouflé pour tous les gardes et civils de la carte, 
+excepté le civil sur lequel il se trouve. Les pénalités associées à la 
+présence dans la vision des gardes et des civils sont donc mises à jour 
+en conséquence.</span></p><p class="part" data-startline="48" data-endline="48" data-position="3447" data-size="0"><span data-position="3447" data-size="6">Écoute</span></p><p class="part" data-startline="50" data-endline="50" data-position="3455" data-size="0"><span data-position="3455" data-size="724">Hitman
+ entend les personnes autour de lui. Son écoute n’est pas limitée par 
+les murs et les objets, cependant quand il y a trop de personnes dans la
+ zone le brouhaha l’empêche de distinguer précisément le nombre de 
+personnes présentes. Hitman a du mal à distinguer les voix quand il y a 
+plus de 5 personnes dans la zone. Il n’y a pas de distinction en 
+fonction du type de personne. Vous ne connaissez ni leur position 
+précise (juste leur présence dans la zone) ni qui parmi ce nombre est un
+ invité ou un garde. Hitman entend les cases autour de lui dans un carré
+ de deux cases dans chaque direction, y compris en diagonale et la case 
+où il se trouve (soit 25 cases en tout). Il n’est pas compté dans les 
+personnes détectées.</span></p><h3 class="part" data-startline="52" data-endline="52" id="23-Déplacements" data-id="23-Déplacements"><a class="anchor hidden-xs" href="#23-Déplacements" title="23-Déplacements" smoothhashscroll=""><span class="octicon octicon-link"></span></a><span data-position="4185" data-size="16">2.3 Déplacements</span></h3><ul class="part" data-startline="54" data-endline="57" data-position="4203" data-size="0">
+<li class="" data-startline="54" data-endline="54" data-position="4205" data-size="0"><span data-position="4205" data-size="31">On ne peut pas traverser un mur</span></li>
+<li class="" data-startline="55" data-endline="55" data-position="4239" data-size="0"><span data-position="4239" data-size="33">On ne peut pas traverser un garde</span></li>
+<li class="" data-startline="56" data-endline="57" data-position="4276" data-size="0"><span data-position="4276" data-size="46">On peut traverser un invité (en disant pardon)</span></li>
+</ul><h2 class="part" data-startline="58" data-endline="58" id="3-Description-des-phases-de-jeu" data-id="3-Description-des-phases-de-jeu"><a class="anchor hidden-xs" href="#3-Description-des-phases-de-jeu" title="3-Description-des-phases-de-jeu" smoothhashscroll=""><span class="octicon octicon-link"></span></a><span data-position="4327" data-size="32">3. Description des phases de jeu</span></h2><h3 class="part" data-startline="60" data-endline="60" id="Phase-1" data-id="Phase-1"><a class="anchor hidden-xs" href="#Phase-1" title="Phase-1" smoothhashscroll=""><span class="octicon octicon-link"></span></a><span data-position="4365" data-size="7">Phase 1</span></h3><p class="part" data-startline="62" data-endline="62" data-position="4374" data-size="0"><strong data-position="4374" data-size="0"><span data-position="4376" data-size="17">Actions possibles</span></strong><span data-position="4395" data-size="17"> pour le joueur :</span></p><ul class="part" data-startline="64" data-endline="67" data-position="4414" data-size="0">
+<li class="" data-startline="64" data-endline="64" data-position="4416" data-size="0"><span data-position="4416" data-size="19">tourner horaire 90°</span></li>
+<li class="" data-startline="65" data-endline="65" data-position="4438" data-size="0"><span data-position="4438" data-size="23">tourner antihoraire 90°</span></li>
+<li class="" data-startline="66" data-endline="67" data-position="4464" data-size="0"><span data-position="4464" data-size="50">avancer d’une case (dans le sens où on est tourné)</span></li>
+</ul><p class="part" data-startline="68" data-endline="68" data-position="4516" data-size="0"><strong data-position="4516" data-size="0"><span data-position="4518" data-size="31">Informations données par le jeu</span></strong><span data-position="4551" data-size="2"> :</span></p><ul class="part" data-startline="70" data-endline="72" data-position="4555" data-size="0">
+<li class="" data-startline="70" data-endline="70" data-position="4557" data-size="0"><span data-position="4557" data-size="91">position et type du premier objet/personne en face de vous (dépendant de votre orientation)</span></li>
+<li class="" data-startline="71" data-endline="72" data-position="4651" data-size="0"><span data-position="4651" data-size="25">nb de personnes entendues</span></li>
+</ul><p class="part" data-startline="73" data-endline="73" data-position="4678" data-size="0"><strong data-position="4678" data-size="0"><span data-position="4680" data-size="10">Objectif :</span></strong><span data-position="4692" data-size="174">
+ la phase 1 s’arrête lorsque vous êtes capable de donner le contenu de 
+toutes les cases de la salle de réception (après avoir visité toutes les
+ cases ou déduit leur contenu).</span></p><p class="part" data-startline="75" data-endline="75" data-position="4869" data-size="0"><strong data-position="4869" data-size="0"><span data-position="4871" data-size="21">Décompte des points :</span></strong><span data-position="4894" data-size="180">
+ deux points par case correctement classée, un point de malus par 
+action, 5 points de malus supplémentaire par nombre de fois où vous êtes
+ passé dans le champ de vision d’un garde.</span></p><h3 class="part" data-startline="77" data-endline="77" id="Phase-2" data-id="Phase-2"><a class="anchor hidden-xs" href="#Phase-2" title="Phase-2" smoothhashscroll=""><span class="octicon octicon-link"></span></a><span data-position="5080" data-size="7">Phase 2</span></h3><p class="part" data-startline="79" data-endline="79" data-position="5089" data-size="0"><span data-position="5089" data-size="71">Hitman est replacé à l’entrée, peu importe où il avait fini la phase 1.</span></p><p class="part" data-startline="81" data-endline="81" data-position="5163" data-size="0"><span data-position="5163" data-size="90">La cible est maintenant présente à l’endroit prévu, vous devez maintenant aller l’éliminer</span></p><p class="part" data-startline="83" data-endline="83" data-position="5255" data-size="0"><strong data-position="5255" data-size="0"><span data-position="5257" data-size="34">Actions possibles pour le joueur :</span></strong></p><ul class="part" data-startline="85" data-endline="93" data-position="5296" data-size="0">
+<li class="" data-startline="85" data-endline="85" data-position="5298" data-size="0"><code data-position="5299" data-size="15">tourner_horaire</code><span data-position="5315" data-size="7"> de 90°</span></li>
+<li class="" data-startline="86" data-endline="86" data-position="5325" data-size="0"><code data-position="5326" data-size="19">tourner_antihoraire</code><span data-position="5346" data-size="7"> de 90°</span></li>
+<li class="" data-startline="87" data-endline="87" data-position="5356" data-size="0"><code data-position="5357" data-size="7">avancer</code><span data-position="5365" data-size="67"> (dans le sens où on est tourné, en suivant les règles précédentes)</span></li>
+<li class="" data-startline="88" data-endline="88" data-position="5435" data-size="0"><code data-position="5436" data-size="10">tuer_cible</code><span data-position="5447" data-size="74"> : il faut avoir la corde de piano sur soi et être sur la case de la cible</span></li>
+<li class="" data-startline="89" data-endline="89" data-position="5525" data-size="0"><code data-position="5526" data-size="17">neutraliser_garde</code><span data-position="5544" data-size="4"> et </span><code data-position="5549" data-size="17">neutraliser_civil</code><span data-position="5567" data-size="230">
+ : il faut regarder le garde ou le civil, être sur une case adjacente et
+ qu’il ne vous regarde pas. La corde de piano n’est pas nécessaire. Une 
+fois neutralisée, la personne n’apparaît plus dans les visions et sa 
+case est libérée.</span></li>
+<li class="" data-startline="90" data-endline="90" data-position="5800" data-size="0"><code data-position="5801" data-size="14">passer_costume</code><span data-position="5816" data-size="41"> : il faut être en possession du costume.</span></li>
+<li class="" data-startline="91" data-endline="91" data-position="5860" data-size="0"><code data-position="5861" data-size="15">prendre_costume</code><span data-position="5877" data-size="39"> : il faut être sur la case du costume.</span></li>
+<li class="" data-startline="92" data-endline="93" data-position="5919" data-size="0"><code data-position="5920" data-size="12">prendre_arme</code><span data-position="5933" data-size="57"> : il faut être sur la case de l’arme (la corde de piano)</span></li>
+</ul><p class="part" data-startline="94" data-endline="94" data-position="5992" data-size="0"><span data-position="5992" data-size="98">Le jeu s’arrête quand la cible est tuée et que je joueur est retourné sur la case de départ (0,0).</span></p><p class="part" data-startline="96" data-endline="96" data-position="6092" data-size="0"><strong data-position="6092" data-size="0"><span data-position="6094" data-size="34">Décompte des points (de furtivité)</span></strong><span data-position="6130" data-size="246">
+ : nb d’actions effectuées + nb de fois vu par un garde * 5 + nb de 
+personnes neutralisées * 20 + nb de fois vu en train de passer le 
+costume * 100 + nb de fois vu en train de neutraliser quelqu’un * 100 + 
+nb de fois vu en train de tuer la cible * 100</span></p><h2 class="part" data-startline="98" data-endline="98" id="4-Travail-demandé" data-id="4-Travail-demandé"><a class="anchor hidden-xs" href="#4-Travail-demandé" title="4-Travail-demandé" smoothhashscroll=""><span class="octicon octicon-link"></span></a><span data-position="6386" data-size="18">4. Travail demandé</span></h2><ol class="part" data-startline="100" data-endline="104" data-position="6406" data-size="0">
+<li class="" data-startline="100" data-endline="100" data-position="6409" data-size="0"><span data-position="6409" data-size="48">La modélisation en SAT proposée pour la phase 1.</span></li>
+<li class="" data-startline="101" data-endline="101" data-position="6461" data-size="0"><span data-position="6461" data-size="189">Un
+ programme en Python capable de jouer au mieux à chacune des phases. Les
+ déductions de la phase 1 devront s’appuyer sur une modélisation en 
+logique propositionnelle et sur un solveur SAT.</span></li>
+<li class="" data-startline="102" data-endline="102" data-position="6654" data-size="0"><span data-position="6654" data-size="93">La modélisation STRIPS de la phase 2 et un programme en Python exploitant cette modélisation.</span></li>
+<li class="" data-startline="103" data-endline="104" data-position="6751" data-size="0"><span data-position="6751" data-size="11">Un rapport </span><strong data-position="6762" data-size="0"><span data-position="6764" data-size="11">synthétique</span></strong><span data-position="6777" data-size="18"> (sous forme d’un </span><code data-position="6796" data-size="9">Readme.md</code><span data-position="6806" data-size="207">)
+ incluant vos modélisations STRIPS (éventuellement dans un autre fichier
+ en format pdf), résumant les forces et faiblesses de vos programmes et 
+indiquant comment fonctionne et faire fontionner votre projet.</span></li>
+</ol><p class="part" data-startline="105" data-endline="105" data-position="7015" data-size="0"><span data-position="7015" data-size="335">Les
+ programmes seront lancés et testés sur différentes cartes sur des 
+serveurs de correction. Différents classements seront réalisés. La 
+planification de vos actions de la phase 2 se feront à l’aide des 
+algorithmes qui seront vus en cours. Différentes cartes permettant de 
+tester votre programme vous seront données au fur et à mesure.</span></p><p class="part" data-startline="107" data-endline="107" data-position="7352" data-size="0"><span data-position="7352" data-size="145">L’oracle
+ communiquant les informations d’Hitman, le gestionnaire de jeu  ainsi 
+que quelques cartes d’essai vous seront donnés très prochainement.</span></p><p class="part" data-startline="109" data-endline="109" data-position="7499" data-size="0"><span data-position="7499" data-size="23">Les projets se font en </span><strong data-position="7522" data-size="0"><span data-position="7524" data-size="6">binôme</span></strong><span data-position="7532" data-size="17">, appartenant au </span><strong data-position="7549" data-size="0"><span data-position="7551" data-size="17">même groupe de TP</span></strong><span data-position="7570" data-size="1">.</span></p><h2 class="part" data-startline="111" data-endline="111" id="5-Calendrier" data-id="5-Calendrier"><a class="anchor hidden-xs" href="#5-Calendrier" title="5-Calendrier" smoothhashscroll=""><span class="octicon octicon-link"></span></a><span data-position="7576" data-size="13">5. Calendrier</span></h2><ul class="part" data-startline="113" data-endline="115" data-position="7591" data-size="0">
+<li class="" data-startline="113" data-endline="113" data-position="7593" data-size="0"><strong data-position="7593" data-size="0"><span data-position="7595" data-size="10">02/05/2023</span></strong><span data-position="7607" data-size="28"> : première version du sujet</span></li>
+<li class="" data-startline="114" data-endline="114" data-position="7638" data-size="0"><span data-position="7638" data-size="19">Dans le semaine du </span><strong data-position="7657" data-size="0"><span data-position="7659" data-size="10">08/05/2023</span></strong><span data-position="7671" data-size="47"> : une premirèe version de l’arbitre à utiliser</span></li>
+<li class="" data-startline="115" data-endline="115" data-position="7721" data-size="0"><strong data-position="7721" data-size="0"><span data-position="7723" data-size="10">25/06/2023</span></strong><span data-position="7735" data-size="40"> : remise de la version finale du projet</span></li>
+</ul></div>
+
+    <div class="document-footer container-fluid hmd-pb-2 hidden-print">
+        <div class="flex items-center justify-end -mb-5 text-right text-gray-500 text-3">
+            <span>
+                Last changed by
+                &nbsp;
+            </span>
+
+            
+                <span class="ui-lastchangeuser h-[18px]" data-profile="syllag" data-placement="left">
+                    <a class="ui-user-icon inline-block w-[18px] h-[18px] m-0 user-card-popover" style="background-image: url(https://uploads-public.hackmd.io/OmUMH0N.jpg);" target="_blank" href="https://hackmd.io/@syllag" data-toggle="popover" data-original-title="" title=""></a>
+                </span>
+            
+        </div>
+
+        <hr class="my-7.5">
+        <div class="flex flex-col-reverse footer hmd-items-center sm:flex-row gap-[25px] sm:gap-0">
+    <div class="flex-1 block h-full">
+        <div class="flex gap-3">
+    
+        <span class="flex items-center justify-center ui-owner-team" data-placement="top" data-profile="ia02">
+             <a class="inline-block w-10 h-10 m-0 min-w-10 ui-user-icon user-card-popover" style="background-image: url(data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+PHN2ZyB4bWxuczpyZGY9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkvMDIvMjItcmRmLXN5bnRheC1ucyMiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgaGVpZ2h0PSI5NiIgd2lkdGg9Ijk2IiB2ZXJzaW9uPSIxLjEiIHZpZXdCb3g9IjAgMCA5NiA5NiI+PGc+PHJlY3Qgd2lkdGg9Ijk2IiBoZWlnaHQ9Ijk2IiBmaWxsPSIjZDVkYjM0IiAvPjx0ZXh0IGZvbnQtc2l6ZT0iNjRweCIgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiNmZmZmZmYiPjx0c3BhbiB4PSI0OCIgeT0iNzIiIHN0cm9rZS13aWR0aD0iLjI2NDU4cHgiIGZpbGw9IiNmZmZmZmYiPkk8L3RzcGFuPjwvdGV4dD48L2c+PC9zdmc+);" target="_blank" href="https://hackmd.io/@ia02" data-toggle="popover" data-original-title="" title=""></a>
+        </span>
+    
+
+
+    <div class="flex flex-col max-w-[303px] gap-1.5 justify-center items-start">
+        
+            <a class="font-bold ui-owner-team text-5 text-black-brand user-card-popover" hover:underline="" cursor-pointer"="" data-profile="ia02" href="https://hackmd.io/@ia02" data-toggle="popover" data-original-title="" title="">
+                ia02
+            </a>
+        
+
+        
+            <span class="text-gray-600 text-3">
+                IA02
+            </span>
+        
+    </div>
+</div>
+
+    </div>
+
+    <div class="footer__views">
+        <span class="mr-4">
+            <i class="fa fa-eye"></i> <span class="ui-viewcount" title="4811">4811</span>
+        </span>
+
+    
+        <a class="ui-signin community-button" href="#">
+            <span>
+                <i class="fa fa-fw fa-heart-o"></i>
+                <span class="count">1</span>
+            </span>
+        </a>
+
+        <a class="ui-signin community-button" href="#">
+            <span>
+                <i class="fa fa-fw fa-bookmark-o"></i>
+            </span>
+        </a>
+
+        <a class="ui-signin community-button" href="#">
+            <span>
+                <i class="fa fa-fw fa-bell-o"></i>
+            </span>
+        </a>
+    
+    </div>
+</div>
+
+<section id="notes-recommendations">
+    
+</section>
+
+
+<hr class="mt-7.5 mb-3.5">
+
+<div class="footer text-[15px] text-gray-700 text-center">
+    <span>Published on</span> <strong><a href="https://hackmd.io/" target="_blank"><i class="fa fa-file-text"></i> <span class="brand">HackMD</span></a></strong>
+</div>
+
+    </div>
+
+    <div class="ui-community unselectable hidden-print hidden-xs" style="left: 285.183px; display: none;">
+        
+            <a class="ui-signin community-button" href="#" title="" data-toggle="tooltip" data-placement="right" data-offset="0,5" data-original-title="Like"><span><i class="fa fa-fw fa-heart-o"></i><span class="count hmd-ml-2">1</span></span></a>
+            <a class="ui-signin community-button" href="#" title="" data-toggle="tooltip" data-placement="right" data-offset="0,5" data-original-title="Bookmark"><span><i class="fa fa-fw fa-bookmark-o"></i></span></a>
+            <a class="ui-signin community-button" href="#" title="" data-toggle="tooltip" data-placement="right" data-offset="0,5" data-original-title="Subscribe"><span><i class="fa fa-fw fa-bell-o"></i></span></a>
+        
+    </div>
+
+    <div class="ui-toc dropup unselectable hidden-print" style="display: none; left: 303.65px;">
+        <div class="pull-left dropdown">
+            <a id="tocLabel" class="ui-toc-label btn btn-default" data-toggle="dropdown" href="#" role="button" aria-haspopup="true" aria-expanded="false" title="Table of content">
+                <i class="fa fa-bars"></i>
+            </a>
+            <ul id="ui-toc" class="ui-toc-dropdown dropdown-menu" aria-labelledby="tocLabel"><div class="toc"><ul class="nav">
+<li><a href="#0-Historique-du-document" title="0. Historique du document" smoothhashscroll="">0. Historique du document</a></li>
+<li><a href="#1-Présentation-du-projet" title="1. Présentation du projet" smoothhashscroll="">1. Présentation du projet</a></li>
+<li><a href="#2-Règles-du-jeu" title="2. Règles du jeu" smoothhashscroll="">2. Règles du jeu</a><ul class="nav">
+<li><a href="#21-Description-de-l’environnement" title="2.1. Description de l’environnement" smoothhashscroll="">2.1. Description de l’environnement</a></li>
+<li><a href="#22-Percepts" title="2.2. Percepts" smoothhashscroll="">2.2. Percepts</a></li>
+<li><a href="#23-Déplacements" title="2.3 Déplacements" smoothhashscroll="">2.3 Déplacements</a></li>
+</ul>
+</li>
+<li><a href="#3-Description-des-phases-de-jeu" title="3. Description des phases de jeu" smoothhashscroll="">3. Description des phases de jeu</a><ul class="nav">
+<li><a href="#Phase-1" title="Phase 1" smoothhashscroll="">Phase 1</a></li>
+<li><a href="#Phase-2" title="Phase 2" smoothhashscroll="">Phase 2</a></li>
+</ul>
+</li>
+<li><a href="#4-Travail-demandé" title="4. Travail demandé" smoothhashscroll="">4. Travail demandé</a></li>
+<li><a href="#5-Calendrier" title="5. Calendrier" smoothhashscroll="">5. Calendrier</a></li>
+</ul>
+</div><div class="toc-menu"><a class="expand-toggle" href="#">Expand all</a><a class="back-to-top" href="#">Back to top</a><a class="go-to-bottom" href="#">Go to bottom</a></div></ul>
+        </div>
+    </div>
+
+    <div id="ui-toc-affix" class="ui-affix-toc ui-toc-dropdown unselectable hidden-print affix" data-spy="affix" style="top: 77.3833px; left: 124px; width: 340px;"><div class="toc"><ul class="nav">
+<li><a href="#0-Historique-du-document" title="0. Historique du document" smoothhashscroll="">0. Historique du document</a></li>
+<li><a href="#1-Présentation-du-projet" title="1. Présentation du projet" smoothhashscroll="">1. Présentation du projet</a></li>
+<li><a href="#2-Règles-du-jeu" title="2. Règles du jeu" smoothhashscroll="">2. Règles du jeu</a><ul class="nav">
+<li><a href="#21-Description-de-l’environnement" title="2.1. Description de l’environnement" smoothhashscroll="">2.1. Description de l’environnement</a></li>
+<li><a href="#22-Percepts" title="2.2. Percepts" smoothhashscroll="">2.2. Percepts</a></li>
+<li><a href="#23-Déplacements" title="2.3 Déplacements" smoothhashscroll="">2.3 Déplacements</a></li>
+</ul>
+</li>
+<li><a href="#3-Description-des-phases-de-jeu" title="3. Description des phases de jeu" smoothhashscroll="">3. Description des phases de jeu</a><ul class="nav">
+<li><a href="#Phase-1" title="Phase 1" smoothhashscroll="">Phase 1</a></li>
+<li><a href="#Phase-2" title="Phase 2" smoothhashscroll="">Phase 2</a></li>
+</ul>
+</li>
+<li><a href="#4-Travail-demandé" title="4. Travail demandé" smoothhashscroll="">4. Travail demandé</a></li>
+<li><a href="#5-Calendrier" title="5. Calendrier" smoothhashscroll="">5. Calendrier</a></li>
+</ul>
+</div><div class="toc-menu"><a class="expand-toggle" href="#">Expand all</a><a class="back-to-top" href="#">Back to top</a><a class="go-to-bottom" href="#">Go to bottom</a></div></div>
+    
+
+    <div class="clearfix"></div>
+
+    <!-- signin modal -->
+
+<div class="modal fade signin-modal" tabindex="-1" role="dialog" aria-labelledby="mySmallModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close" style="margin-top: 10px; right: 20px; position: absolute;"><span aria-hidden="true">×</span></button>
+            
+
+
+
+
+
+
+    
+
+
+
+
+
+
+
+<h3>Sign in</h3>
+
+<form data-toggle="validator" role="form" class="form-horizontal" method="post" enctype="application/x-www-form-urlencoded" id="signin-form" novalidate="true">
+    <div class="hmd-dn"><input type="hidden" name="_csrf" value="sjTrokNy-rX4w9Hp_Bwl_fNiFqTdHT7_Cm4g"></div>
+    <div class="hmd-dn"><input type="hidden" name="create_team" value="false"></div>
+    <div class="hmd-dn"><input type="hidden" name="create_paid_team" value="false"></div>
+    <div class="form-group  ">
+        <label for="email" class="control-label">Email</label>
+        <label for="inputEmail" class="control-label pull-right errors">
+            
+        </label>
+        <span class="help-block control-label with-errors pull-right" style="display: inline;"></span>
+        <div class="input-block">
+            
+                <input type="email" class="form-control" name="email" placeholder="Your email" required="" autocomplete="email">
+            
+            <span class="error-sign"></span>
+        </div>
+    </div>
+    <div class="form-group ">
+        <label for="password" class="control-label">Password</label>
+        <label for="inputPassword" class="control-label pull-right errors">
+            
+        </label>
+        <span class="help-block control-label with-errors pull-right" style="display: inline;"></span>
+        <div class="input-block">
+            <input type="password" class="form-control" name="password" placeholder="Your password" required="" autocomplete="current-password">
+            <span class="error-sign"></span>
+            
+                <span class="control-label pull-right" style="font-size: 13px; margin-top: 5px;"><a href="https://hackmd.io/settings/forgotPassword" style="text-decoration: underline;">Forgot password</a></span>
+            
+        </div>
+    </div>
+
+    <div style="text-align: center; padding-top: 15px; margin-bottom: 0px;">
+        
+
+        
+            <input type="submit" class="btn btn-success btn-large disabled" formaction="https://hackmd.io/login" value="Sign in">
+        
+
+        
+    </div>
+</form>
+
+
+
+
+
+
+
+
+    
+        <p class="separator">or</p>
+    
+
+    
+        <p>By clicking below, you agree to our <a href="https://hackmd.io/s/terms" target="_blank">terms of service</a>.</p>
+    
+
+    
+
+
+
+
+
+
+
+
+ 
+
+
+
+<script id="gsi-client" src="Sujet_files/client" async="" defer="defer" nonce=""></script>
+<script nonce="">
+    function handleCredentialResponse(response) {
+        const form = document.getElementById('sign-in-with-google-form')
+        form.children.credential.value = response.credential
+        form.children.method.value = location.href.toLowerCase() === 'https://hackmd.io/settings#general' ? 'merge' : 'login'
+        form.submit()
+    }
+    var GSI_READY = new Promise(function (resolve) {
+        function initialize () {
+            google.accounts.id.initialize({
+                client_id: '911617723593-drikdibvvn63slfd6kbqigo8ql1no55s.apps.googleusercontent.com',
+                callback: handleCredentialResponse
+            })
+            const loginPath = 'https://hackmd.io/login'
+            const joinPath = 'https://hackmd.io/join'
+            const renderButton = function () {
+                google.accounts.id.renderButton(
+                    document.getElementById('sign-in-with-google-button'),
+                    { type: 'standard', width: 250 }
+                )
+            }
+            if (location.href.toLowerCase() === loginPath || location.href.toLowerCase() === joinPath) {
+                renderButton()
+            } else {
+                $('.signin-modal').one('shown.bs.modal', function () {
+                    renderButton()
+                })
+            }
+            resolve()
+        }
+
+        window.addEventListener('load', function () { initialize() })
+    })
+</script>
+<form class="hidden" id="sign-in-with-google-form" action="/auth/google" method="post">
+    <input type="hidden" name="credential">
+    <input type="hidden" name="method">
+</form>
+ 
+
+<div class="social-buttons-container">
+    
+    <div id="sign-in-with-google-button"></div>
+    
+    
+    <a href="https://hackmd.io/auth/facebook" class="btn btn-lg btn-block btn-social btn-facebook">
+        <i class="fa fa-facebook"></i> Sign in via Facebook
+    </a>
+    
+    
+    <a href="https://hackmd.io/auth/twitter" class="btn btn-lg btn-block btn-social btn-twitter">
+        <i class="fa fa-twitter"></i> Sign in via Twitter
+    </a>
+    
+    
+    <a href="https://hackmd.io/auth/github" class="btn btn-lg btn-block btn-social btn-github">
+        <i class="fa fa-github"></i> Sign in via GitHub
+    </a>
+    
+    
+    <a href="https://hackmd.io/auth/dropbox" class="btn btn-lg btn-block btn-social btn-dropbox">
+        <i class="fa fa-dropbox"></i> Sign in via Dropbox
+    </a>
+    
+    
+    
+</div>
+
+
+
+
+
+    <div>
+        <p>New to HackMD? <a href="https://hackmd.io/join">Sign up</a></p>
+    </div>
+
+
+            
+
+<!-- recaptcha script for static page -->
+
+
+        </div>
+    </div>
+</div>
+
+    
+    <script src="Sujet_files/js"></script>
+    <script nonce="">
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        let userid = (document.cookie.match('(^|; )userid=([^;]*)')||0)[2];
+        gtag('config', 'UA-60728495-1', {'user_id': userid});
+        
+    </script>
+
+
+    
+<script src="Sujet_files/bundle.min.js" crossorigin="anonymous"></script>
+<script nonce="">Sentry.init({ dsn: 'https://73410f1915d84abc8b2dd1f1aabd1c82@sentry.hackmd.dev/4', environment: 'production', integrations: function (intrus) { return intrus.filter(function (itr) { return itr.name !== 'TryCatch' }) } });</script>
+
+
+    
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-KLW9Z3"
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+
+
+
+    <script src="Sujet_files/i18n.js"></script>
+     <script src="Sujet_files/font-vendor.8ccf5b3bef0e171569b5.js" defer="defer"></script><script src="Sujet_files/common-vendor.5a96f2fab315139321d3.js" defer="defer"></script><script src="Sujet_files/pretty-vendor.3a661c5140ccde4a899f.js" defer="defer"></script><script src="Sujet_files/pretty-common.a7e3b60234cb68576456.js" defer="defer"></script><script src="Sujet_files/pretty.f734acd5200b280ebde8.js" defer="defer"></script>
+
+    
+
+
+
+<div><div class="grecaptcha-badge" data-style="bottomright" style="width: 256px; height: 60px; display: block; transition: right 0.3s ease 0s; position: fixed; bottom: 14px; right: -186px; box-shadow: gray 0px 0px 5px; border-radius: 2px; overflow: hidden;"><div class="grecaptcha-logo"><iframe title="reCAPTCHA" src="Sujet_files/anchor.html" role="presentation" name="a-dre678yxpcv4" scrolling="no" sandbox="allow-forms allow-popups allow-same-origin allow-scripts allow-top-navigation allow-modals allow-popups-to-escape-sandbox allow-storage-access-by-user-activation" width="256" height="60" frameborder="0"></iframe></div><div class="grecaptcha-error"></div><textarea id="g-recaptcha-response-100000" name="g-recaptcha-response" class="g-recaptcha-response" style="width: 250px; height: 40px; border: 1px solid rgb(193, 193, 193); margin: 10px 25px; padding: 0px; resize: none; display: none;"></textarea></div><iframe style="display: none;"></iframe></div><div class="ReactModalPortal"></div><div class="ReactModalPortal"></div><div class="ReactModalPortal"></div></body></html>
