@@ -3,7 +3,7 @@ Ce dépôt contient les codes des TPs et du projet de l'UV IA02 de l'Université
 
 ## 👨‍💻 - Langages utilisés
 
-- Python
+- [Python](https://www.python.org)
 - [Prolog](https://fr.wikipedia.org/wiki/Prolog)
 
 ## 📝 - Licence
