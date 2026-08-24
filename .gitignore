@@ -1,0 +1,8 @@
+# Artefacts Python
+__pycache__/
+*.pyc
+
+# Binaires du solveur SAT (voir README)
+TP2/gophersat
+TP3/gophersat
+Projet/gophersat/gophersat
