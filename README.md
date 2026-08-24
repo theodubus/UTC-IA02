@@ -1,18 +1,21 @@
 # UTC-IA02
-Ce dépôt contient les codes des TPs et du projet de l'UV IA02 de l'Université de Technologie de Compiègne.
 
-## 👨‍💻 - Langages utilisés
+Logique et résolution de problèmes — mes TP et le projet de l'UV **IA02** de l'UTC : logique propositionnelle, solveurs SAT et Prolog.
 
-- [Python](https://www.python.org)
-- [Prolog](https://fr.wikipedia.org/wiki/Prolog)
+Le dossier [`Projet/`](Projet) est l'instantané de fin d'UV du projet **Hitman**, un agent qui planifie ses actions avec du SAT et du STRIPS. Sa version maintenue et documentée vit dans son propre dépôt : [UTC-IA02-Projet](https://github.com/theodubus/UTC-IA02-Projet).
 
-## 📝 - Licence
+## Travaux pratiques
 
-[MIT](LICENSE)
+| | Au programme |
+|---|---|
+| **[TP1](TP1)** | Logique propositionnelle en Python : décomposition binaire, tables de vérité |
+| **[TP2](TP2)** | Solveur SAT : format DIMACS, instances d'exemple résolues avec gophersat |
+| **[TP3](TP3)** | Sudoku encodé en SAT : des cases aux variables, résolution automatique |
+| **[TP4](TP4)** | Mastermind en Prolog : pions bien placés, règles récursives (deux solutions) |
+| **[TP5](TP5)** | Mastermind en Prolog, suite |
 
-## 📔 - Auteur
+Les binaires du solveur [gophersat](https://github.com/crillab/gophersat) ne sont pas versionnés : téléchargez celui de votre plateforme depuis [ses releases](https://github.com/crillab/gophersat/releases) et placez-le dans le dossier du TP concerné.
 
--  **[theodubus](https://github.com/theodubus/)**
+## Licence
 
-## 📑 - Références
-- **Lien moodle vers le cours** : [UTC-IA02](https://moodle.utc.fr/course/view.php?id=20)
+[MIT](LICENSE) — [theodubus](https://github.com/theodubus/)
